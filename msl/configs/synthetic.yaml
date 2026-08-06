@@ -1,0 +1,38 @@
+# Milestone 0: synthetic tensors only. No video, no MediaPipe, no camera.
+# Any accuracy number produced from this config is noise by construction --
+# the labels are random. It exists to prove the plumbing.
+
+feature:
+  use_z: true          # set false to ablate the unreliable MediaPipe z channel
+  seq_len: 64
+
+model:
+  arch: transformer    # transformer | bilstm | tcn  (stgcn stubbed, Milestone 4)
+  d_model: 128
+  n_layers: 4
+  n_heads: 4
+  ffn_dim: 256
+  dropout: 0.3
+  tcn_kernel_size: 5
+
+train:
+  batch_size: 16
+  lr: 0.001
+  weight_decay: 0.01
+  max_steps: 200
+  warmup_steps: 20
+  label_smoothing: 0.1
+  grad_clip: 1.0
+  eval_every: 25
+  patience: 5
+  seed: 1234
+  num_workers: 0       # 16GB box, ~90% committed: workers cost a process copy each
+  out_dir: checkpoints
+  log_dir: runs
+  tensorboard: true
+
+synthetic:
+  n_train: 128
+  n_val: 32
+  num_classes: 5
+  seed: 0

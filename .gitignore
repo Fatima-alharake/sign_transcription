@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# Recorded media and derived tensors NEVER enter git.
+#
+# A repo that has once held large binaries stays bloated permanently: the blobs
+# live in history even after deletion, and every future clone pays for them.
+# Recorded media is backed up separately (external drive + offsite copy).
+#
+# What IS versioned: code, configs, and the small text files whose history is
+# the point -- manifest.csv, signers.csv, and the gloss prompt list. Those are
+# whitelisted with ! rules below.
+# ---------------------------------------------------------------------------
+
+# Raw video, in any location
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Cached landmark tensors
+*.npy
+*.npz
+
+# Data directories (recorded takes, extracted landmarks, archival copies)
+data/
+!msl/data/
+raw/
+archive/
+landmark_cache/
+
+# Re-admit the dataset record itself: small, text, and its history matters.
+!**/manifest.csv
+!**/signers.csv
+!**/prompts/**/*.txt
+!**/prompts/**/*.csv
+
+# Model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+checkpoints/
+runs/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
