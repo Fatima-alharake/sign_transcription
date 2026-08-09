@@ -51,6 +51,7 @@ msl/
   runtime.py           device resolution, seeding, RSS reporting
   data/
     landmarks.py       which keypoints we keep; no MediaPipe import
+    extract.py         video -> normalised landmark tensors, cached
     dataset.py         synthetic source; real path stubbed to Milestone 2
     vocab.py           gloss <-> id
   models/
@@ -66,6 +67,43 @@ Backbones emit a pooled embedding and know nothing about class count. The
 classifier is a separate module with its own state-dict subtree, so a backbone
 pretrained on AUTSL can be reloaded under a Mongolian vocabulary of a different
 size (`load_backbone_only`).
+
+## Landmark extraction
+
+`extract.py` splits into a pure NumPy core (normalisation, packing, caching) and
+a MediaPipe layer that is imported lazily — so the test suite runs with no model
+bundle and no video present, and `import msl.data.extract` stays cheap.
+
+**MediaPipe 1.0 removed `mediapipe.solutions` entirely.** The legacy `Holistic`
+API is gone, not merely deprecated, so any tutorial code built on it fails
+outright. We use the Tasks API `HolisticLandmarker`, which additionally assigns
+left/right hand from the body model rather than leaving us to disambiguate
+handedness ourselves.
+
+One-off download of the model bundle (13.7 MB, gitignored):
+
+```bash
+mkdir -p assets
+curl -L -o assets/holistic_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task
+```
+
+Set `data.data_root` (and optionally `data.cache_dir`, `data.assets_dir`) in a
+config to put video and the `.npy` cache on an external drive — AUTSL plus its
+extracted cache runs to tens of GB.
+
+Cache keys hash the video's *contents*, not its path, and fold in the settings
+that change output shape. A re-record under the same filename therefore misses
+the cache, and a `use_z=False` run is never served a `use_z=True` tensor.
+
+### Data source
+
+Recognition is validated against **AUTSL** (Turkish, 226 signs, 43 signers).
+It ships an official signer-independent split, which is the reason it was chosen
+over WLASL's larger vocabulary — the classifier head is discarded on transfer, so
+vocabulary breadth buys nothing, while clips-per-class and a real signer split
+buy everything. Record the exact provenance of the copy used here, and verify any
+mirror preserves the official split and `signer_id` column before training on it.
 
 ## What does not go in git
 

@@ -67,7 +67,7 @@ def _strip_derived(raw: dict) -> dict:
     a checkpoint written by an older revision may carry extra keys and
     `ExperimentConfig.from_dict` rejects unknown ones.
     """
-    allowed = {"feature", "model", "train", "synthetic"}
+    allowed = {"feature", "model", "train", "data", "synthetic"}
     return {k: v for k, v in raw.items() if k in allowed}
 
 

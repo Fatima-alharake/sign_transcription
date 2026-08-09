@@ -34,6 +34,10 @@ landmark_cache/
 !**/prompts/**/*.txt
 !**/prompts/**/*.csv
 
+# MediaPipe model bundles: downloaded once, 13.7 MB of binary, not ours to ship.
+assets/
+*.task
+
 # Model artifacts
 *.pt
 *.pth

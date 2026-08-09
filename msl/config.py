@@ -56,6 +56,45 @@ class TrainConfig:
 
 
 @dataclass(frozen=True)
+class DataConfig:
+    """Where video, landmark cache and MediaPipe model bundles live.
+
+    `data_root` is deliberately configurable rather than hardcoded: AUTSL plus
+    its extracted .npy cache runs to tens of GB, which will not sit on the
+    system drive of every machine this runs on. Point it at an external drive.
+    """
+
+    data_root: str = "data"
+    # Defaults to <data_root>/landmark_cache when None -- see resolved_cache_dir.
+    cache_dir: str | None = None
+    # MediaPipe .task bundles. Not vendored: 13.7 MB of binary has no business
+    # in git, and the download is a one-off (see extract.py for the URL).
+    assets_dir: str = "assets"
+    holistic_task: str = "holistic_landmarker.task"
+
+    # Below this inter-shoulder distance (in normalised image units) the scale
+    # divisor is treated as degenerate and the frame is marked invalid rather
+    # than dividing and producing infinities. Roughly a shoulder width of 0.1%
+    # of frame width -- far smaller than any real signer, so this only fires on
+    # genuinely broken pose output.
+    min_shoulder_distance: float = 1e-3
+
+    min_pose_confidence: float = 0.5
+    min_hand_confidence: float = 0.5
+    min_face_confidence: float = 0.5
+
+    @property
+    def resolved_cache_dir(self) -> Path:
+        if self.cache_dir is not None:
+            return Path(self.cache_dir)
+        return Path(self.data_root) / "landmark_cache"
+
+    @property
+    def holistic_task_path(self) -> Path:
+        return Path(self.assets_dir) / self.holistic_task
+
+
+@dataclass(frozen=True)
 class SyntheticConfig:
     """Random-tensor data source (spec S3a.1).
 
@@ -74,6 +113,7 @@ class ExperimentConfig:
     feature: FeatureConfig = field(default_factory=FeatureConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
+    data: DataConfig = field(default_factory=DataConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
 
     @classmethod
@@ -82,6 +122,7 @@ class ExperimentConfig:
             "feature": FeatureConfig,
             "model": ModelConfig,
             "train": TrainConfig,
+            "data": DataConfig,
             "synthetic": SyntheticConfig,
         }
         unknown = set(raw) - set(sections)

@@ -11,6 +11,8 @@ dependencies = [
     "onnxruntime>=1.17",
     "tensorboard>=2.16",
     "psutil>=5.9",
+    "mediapipe>=1.0.0",
+    "opencv-python>=5.0.0.93",
 ]
 
 [dependency-groups]
