@@ -74,9 +74,12 @@ Per frame, extract and concatenate:
 
 Normalisation, applied per frame, in this order:
 
+0. **Aspect correction, before anything else.** MediaPipe normalises x by frame width and y by frame height, so on any non-square frame the two axes carry different physical units — a circular hand motion arrives as an ellipse. Convert x into units of image height (multiply by width/height) before centring or scaling. Without this, the inter-shoulder divisor (almost entirely horizontal) is wrong relative to hand motion (substantially vertical) by the aspect ratio. **A pixel-space overlay cannot detect this failure** — it renders correctly either way — so it must be guarded by a test asserting that the same physical pose at 1:1 and 16:9 yields identical features.
 1. Translate so the mid-shoulder point is the origin.
-2. Scale by inter-shoulder distance, so the model is invariant to distance from camera.
+2. Scale by inter-shoulder distance, so the model is invariant to distance from camera. Compute this divisor from x and y only — including the unreliable z channel (§4.3) would corrupt x and y as well, not merely z.
 3. Keep x, y, z; z is unreliable in MediaPipe but adds some depth cue — make it a config flag so I can ablate it.
+
+**Aspect ratio must be recorded per clip in the manifest, and applied from the live frame dimensions at inference.** Training on 16:9 clips and inferring from a 4:3 webcam without re-deriving the correction reintroduces exactly this distortion at the point where it is hardest to notice. `realtime.py` must read the actual camera resolution rather than assuming the training aspect.
 
 Handle missing hands: MediaPipe returns nothing when a hand leaves frame. Emit zeros **plus a per-hand visibility mask channel** so the model can distinguish "hand absent" from "hand at origin".
 
@@ -125,6 +128,8 @@ Writes must be atomic and append-only. Never rewrite the whole manifest in place
 
 Store raw video **and** cached landmark `.npy` alongside it. Raw video must be kept: better landmark extractors will exist later, and re-extracting from video is possible while recovering video from landmarks is not. Warn me about disk usage — 3-second 1080p clips add up fast. Provide a config for capture resolution and a separate archival copy.
 
+**Video and `.npy` files must never enter git.** Add `.gitignore` rules for the data directories from the start. `manifest.csv`, `signers.csv`, and the gloss prompt list *are* version-controlled — they are small, text, and the part whose history matters. Recorded media needs a separate backup strategy (external drive plus one offsite copy); git is not that strategy, and a repo that has ever contained large binaries stays bloated forever.
+
 ### Consent and ethics
 
 - `consent_scope` is a required field with explicit values: `internal-only`, `research-publication`, `public-release`. Default to the most restrictive.
@@ -136,6 +141,32 @@ Store raw video **and** cached landmark `.npy` alongside it. Raw video must be k
 ### Non-negotiable
 
 The tool must never generate, invent, or suggest sign vocabulary. Glosses come from a prompt list I supply, sourced from native signers or a published MSL dictionary.
+
+## 4b. The Ember dictionary as gloss source and reference set
+
+I volunteer for Ember, which operates a verified MSL dictionary at `sign.ember.mn` — around 1,236 signs, each with a video and structured metadata (initial letter, topic, difficulty level, age band, one-handed vs two-handed).
+
+**Access via an official data export from Ember, not by scraping the site.** Do not write a crawler. If an internal API or database export is the route, I will obtain it; your job is to consume whatever format I supply.
+
+### Primary use: prompt list and reference videos
+
+This replaces the placeholder gloss list in `prompts.py`. `capture.py` displays the dictionary video for the target gloss before each take, so signers reproduce the canonical form rather than their own variant. Build `prompts.py` to load an Ember export with fields at least: `gloss, gloss_id, topic, level, age_band, handedness, reference_video_path`.
+
+Support filtering the prompt list by topic and level, so a collection session can cover one coherent semantic domain rather than an alphabetical slice.
+
+### Secondary use: free quality signal
+
+The `handedness` field is a validation gate, not just metadata. If the dictionary marks a sign one-handed but extraction shows sustained two-hand activity in a recorded take, either the take is wrong or the extractor is mislabelling hands. Surface this as a `quality_flags` value at capture time. This catches the left/right identity swap that is otherwise silent.
+
+### What the dictionary is NOT
+
+- **Not a training set.** It is a single signer with roughly one clip per sign. Training a classifier on it would learn that one person, and there is no way to measure signer generalisation from it — the signer-independent split in §5 becomes impossible. Never report accuracy from dictionary-only training.
+- **Not natural signing.** Dictionary entries are citation form: isolated, deliberate, evenly paced. Continuous signing has coarticulation and compressed transitions. A model tuned on citation form degrades on real signing, which matters from Milestone 8 onward.
+- **Not a substitute for recruiting signers.** It defines *what* to collect. Collection still requires multiple signers.
+
+### Later: one-shot recognition (do not build before Milestone 4)
+
+Because there is one reference clip per sign, a metric-learning approach fits well: train an embedding on AUTSL, then classify by nearest neighbour against dictionary embeddings rather than a fixed classifier head. Adding vocabulary then costs one video instead of a retrain. Note this as a design option in the README; do not implement it early.
 
 ## 5. Dataset and augmentation (`data/dataset.py`)
 
@@ -155,7 +186,9 @@ Baseline: a small Transformer encoder.
 - 4 layers, 4 heads, FFN 256, dropout 0.3 — this is a small-data regime, regularise hard.
 - Mean-pool over time → linear classifier.
 
-Provide a `--arch` flag with a BiLSTM alternative as a second baseline, and stub an ST-GCN variant (spatio-temporal graph conv over the hand skeleton) for later. Report all three in the eval table.
+Provide a `--arch` flag with two further baselines: a **BiLSTM**, and a **TCN** (dilated 1D convolutions over the time axis). The TCN is the one to beat — its locality prior makes it strong in exactly the small-data regime this project starts in, and it often outperforms the transformer below a few thousand clips. Report all three in the eval table.
+
+Separately, stub an **ST-GCN** variant (spatio-temporal graph convolution over the hand and body skeleton, using true joint adjacency rather than array-index adjacency) as a fourth architecture for later. Stub only — do not implement it before Milestone 4.
 
 Training: AdamW, cosine schedule with warmup, label smoothing 0.1, early stopping on val top-1. Log to TensorBoard.
 
@@ -184,6 +217,10 @@ Ask me before deciding:
 - Whether output should also be produced in traditional Mongolian script (I have an existing Cyrillic↔traditional converter that could be plugged in here).
 - The initial gloss vocabulary size and which signs to cover first.
 - Whether to target realtime webcam use or offline file processing first.
+
+## 9a. Known issues carried forward
+
+- **ONNX export uses the deprecated TorchScript path** (`dynamo=False`). It works on torch 2.13 and output is numerically verified against PyTorch, but it is the legacy exporter. Related: a TracerWarning in `encoder.py` means the sequence-length guard is frozen into the traced graph as a constant, so the exported model will not raise on a wrong sequence length. Harmless while the time axis is fixed at 64 frames. **This must be revisited at Milestone 5**, when `realtime.py` feeds variable-length sliding windows — either move to the dynamo exporter with a dynamic time axis, or assert the window length before every call.
 
 ## 10. Milestone order
 
