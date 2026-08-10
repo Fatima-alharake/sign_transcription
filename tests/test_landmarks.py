@@ -26,6 +26,10 @@ def test_shoulder_positions_index_into_the_kept_subset() -> None:
 
 def test_face_subset_has_no_duplicates_and_is_a_small_fraction_of_the_mesh() -> None:
     assert len(set(lm.FACE_INDICES)) == len(lm.FACE_INDICES)
+    # The installed model emits 478 points: the 468-point canonical mesh plus
+    # 10 iris points at 468-477. Staying under 468 keeps every index on a
+    # canonical mesh point and off the iris block, whose landmarks carry no
+    # grammatical signal and move with gaze rather than with the sign.
     assert max(lm.FACE_INDICES) < 468
     # The point of subsetting: keep grammar-carrying points, drop the noise.
     assert len(lm.FACE_INDICES) < 50

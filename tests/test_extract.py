@@ -95,6 +95,15 @@ def physical_frame(
     )
 
 
+def normalise(frame: FrameLandmarks, *, width: int = 1000, height: int = 1000, **kwargs):
+    """`normalise_frame` with frame dimensions supplied.
+
+    Square by default so the aspect correction is a no-op and the other tests
+    isolate what they are actually about. The aspect tests pass real dimensions.
+    """
+    return normalise_frame(frame, width=width, height=height, **kwargs)
+
+
 def pose_block(vector: np.ndarray, use_z: bool = True) -> np.ndarray:
     coords = lm.coords_per_landmark(use_z)
     return vector[lm.block_slice("pose", use_z)].reshape(-1, coords)
@@ -109,7 +118,7 @@ def hand_block(vector: np.ndarray, side: str, use_z: bool = True) -> np.ndarray:
 
 
 def test_mid_shoulder_lands_on_the_origin() -> None:
-    vector, ok = normalise_frame(physical_frame())
+    vector, ok = normalise(physical_frame())
     assert ok
     pose = pose_block(vector)
     midpoint = (pose[lm.LEFT_SHOULDER_POS] + pose[lm.RIGHT_SHOULDER_POS]) / 2.0
@@ -118,8 +127,8 @@ def test_mid_shoulder_lands_on_the_origin() -> None:
 
 def test_translating_the_whole_body_changes_nothing() -> None:
     """Invariance to where the signer stands in frame."""
-    a, _ = normalise_frame(physical_frame(centre=(0.5, 0.4)))
-    b, _ = normalise_frame(physical_frame(centre=(0.2, 0.7)))
+    a, _ = normalise(physical_frame(centre=(0.5, 0.4)))
+    b, _ = normalise(physical_frame(centre=(0.2, 0.7)))
     assert a == pytest.approx(b, abs=1e-6)
 
 
@@ -127,7 +136,7 @@ def test_translating_the_whole_body_changes_nothing() -> None:
 
 
 def test_shoulders_are_exactly_one_unit_apart_after_scaling() -> None:
-    vector, ok = normalise_frame(physical_frame())
+    vector, ok = normalise(physical_frame())
     assert ok
     pose = pose_block(vector)
     span = np.linalg.norm(
@@ -138,8 +147,8 @@ def test_shoulders_are_exactly_one_unit_apart_after_scaling() -> None:
 
 def test_distance_from_camera_changes_nothing() -> None:
     """The whole point of scaling: a signer twice as far away is the same sign."""
-    near, _ = normalise_frame(physical_frame(scale=1.0))
-    far, _ = normalise_frame(physical_frame(scale=0.5))
+    near, _ = normalise(physical_frame(scale=1.0))
+    far, _ = normalise(physical_frame(scale=0.5))
     assert near == pytest.approx(far, abs=1e-6)
 
 
@@ -157,8 +166,8 @@ def test_z_is_excluded_from_the_scale_divisor() -> None:
         face=frame.face,
     )
 
-    baseline, _ = normalise_frame(frame)
-    result, ok = normalise_frame(perturbed)
+    baseline, _ = normalise(frame)
+    result, ok = normalise(perturbed)
     assert ok
 
     # x and y are untouched by the z perturbation...
@@ -184,25 +193,50 @@ def test_same_pose_at_different_aspect_ratios_gives_identical_features() -> None
     This cannot be caught by looking at an overlay: an overlay drawn in pixel
     space is correct whether or not the features are.
     """
-    square, _ = normalise_frame(physical_frame(aspect=1.0), aspect=1.0)
-    wide, _ = normalise_frame(physical_frame(aspect=16 / 9), aspect=16 / 9)
+    square, _ = normalise(physical_frame(aspect=1.0), width=900, height=900)
+    wide, _ = normalise(physical_frame(aspect=16 / 9), width=1600, height=900)
     assert square == pytest.approx(wide, abs=1e-6)
 
 
 def test_apply_aspect_touches_only_x() -> None:
     points = np.array([[0.5, 0.25, 0.125]])
-    out = apply_aspect(points, 2.0)
+    out = apply_aspect(points, 2000, 1000)
     assert out[0, 0] == pytest.approx(1.0)
     assert out[0, 1] == pytest.approx(0.25)
     assert out[0, 2] == pytest.approx(0.125)
     assert points[0, 0] == pytest.approx(0.5), "input must not be mutated"
 
 
+def test_apply_aspect_rejects_a_degenerate_frame_size() -> None:
+    with pytest.raises(ValueError, match="frame size"):
+        apply_aspect(np.zeros((1, 3)), 0, 1000)
+
+
+def test_normalise_frame_demands_frame_dimensions() -> None:
+    """No default aspect. A default of 1.0 would silently assume square and
+    reintroduce the distortion on every non-square source (spec S4).
+    """
+    with pytest.raises(TypeError):
+        normalise_frame(physical_frame())  # type: ignore[call-arg]
+
+
+def test_the_same_clip_at_two_source_aspects_needs_its_own_correction() -> None:
+    """Guards the inference-time failure spec S4 calls out: applying one
+    corpus's aspect to another camera's frames. Normalising 16:9 landmarks as
+    though they were square must NOT match the correct result -- if it did,
+    the correction would be doing nothing.
+    """
+    frame = physical_frame(aspect=16 / 9)
+    correct, _ = normalise(frame, width=1600, height=900)
+    assumed_square, _ = normalise(frame, width=900, height=900)
+    assert correct != pytest.approx(assumed_square, abs=1e-4)
+
+
 # --- Missing-hand mask -----------------------------------------------------
 
 
 def test_present_hands_set_the_visibility_flags() -> None:
-    vector, _ = normalise_frame(physical_frame())
+    vector, _ = normalise(physical_frame())
     assert vector[lm.visibility_slice()].tolist() == [1.0, 1.0]
 
 
@@ -214,7 +248,7 @@ def test_absent_hands_clear_the_matching_flag(
     left: bool, right: bool, expected: list[float]
 ) -> None:
     frame = physical_frame(left_hand=left, right_hand=right)
-    vector, ok = normalise_frame(frame)
+    vector, ok = normalise(frame)
     assert ok, "a missing hand must not invalidate the frame"
     assert vector[lm.visibility_slice()].tolist() == expected
 
@@ -228,7 +262,7 @@ def test_absent_hand_is_exactly_zero_not_the_translated_origin() -> None:
     then be the only signal, and any model ignoring it would learn a phantom
     hand pose.
     """
-    vector, _ = normalise_frame(physical_frame(left_hand=False))
+    vector, _ = normalise(physical_frame(left_hand=False))
     left = hand_block(vector, "left_hand")
     assert np.all(left == 0.0), "absent hand must be exactly zero"
 
@@ -248,7 +282,7 @@ def test_a_hand_at_the_body_origin_is_distinguishable_from_an_absent_one() -> No
     )
     present = FrameLandmarks(pose=at_origin.pose, left_hand=hand, right_hand=None)
 
-    vector, _ = normalise_frame(present)
+    vector, _ = normalise(present)
     assert hand_block(vector, "left_hand") == pytest.approx(0.0, abs=1e-6)
     assert hand_block(vector, "right_hand") == pytest.approx(0.0, abs=1e-6)
     # Identical coordinates, opposite meanings -- resolved only by the mask.
@@ -259,7 +293,7 @@ def test_a_hand_at_the_body_origin_is_distinguishable_from_an_absent_one() -> No
 
 
 def test_missing_pose_yields_a_zero_frame_marked_absent() -> None:
-    vector, ok = normalise_frame(FrameLandmarks(pose=None))
+    vector, ok = normalise(FrameLandmarks(pose=None))
     assert not ok
     assert np.all(vector == 0.0)
     assert vector[lm.visibility_slice()].tolist() == [0.0, 0.0]
@@ -270,7 +304,7 @@ def test_coincident_shoulders_do_not_divide_by_zero() -> None:
     frame = physical_frame()
     pose = frame.pose.copy()
     pose[lm.RIGHT_SHOULDER_POS] = pose[lm.LEFT_SHOULDER_POS]
-    vector, ok = normalise_frame(FrameLandmarks(pose=pose, left_hand=frame.left_hand))
+    vector, ok = normalise(FrameLandmarks(pose=pose, left_hand=frame.left_hand))
 
     assert not ok
     assert np.all(np.isfinite(vector))
@@ -280,7 +314,7 @@ def test_coincident_shoulders_do_not_divide_by_zero() -> None:
 def test_shoulder_distance_just_above_threshold_still_normalises() -> None:
     """The guard must not swallow legitimately small-but-real signers."""
     tiny = physical_frame(span=0.02)
-    _, ok = normalise_frame(tiny, min_shoulder_distance=1e-3)
+    _, ok = normalise(tiny, min_shoulder_distance=1e-3)
     assert ok
 
 
@@ -288,7 +322,7 @@ def test_nan_landmarks_are_rejected_rather_than_propagated() -> None:
     frame = physical_frame()
     pose = frame.pose.copy()
     pose[lm.LEFT_SHOULDER_POS, 0] = np.nan
-    vector, ok = normalise_frame(FrameLandmarks(pose=pose))
+    vector, ok = normalise(FrameLandmarks(pose=pose))
     assert not ok
     assert np.all(np.isfinite(vector))
 
@@ -305,14 +339,14 @@ def test_nan_landmarks_are_rejected_rather_than_propagated() -> None:
 )
 def test_wrong_shapes_raise_with_the_block_named(kwargs: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
-        normalise_frame(FrameLandmarks(**kwargs))
+        normalise(FrameLandmarks(**kwargs))
 
 
 def test_wrong_hand_shape_raises() -> None:
     frame = physical_frame()
     bad = FrameLandmarks(pose=frame.pose, left_hand=np.zeros((5, 3)))
     with pytest.raises(ValueError, match="left_hand"):
-        normalise_frame(bad)
+        normalise(bad)
 
 
 # --- use_z ablation --------------------------------------------------------
@@ -320,14 +354,14 @@ def test_wrong_hand_shape_raises() -> None:
 
 @pytest.mark.parametrize("use_z", [True, False])
 def test_feature_vector_length_matches_the_config(use_z: bool) -> None:
-    vector, _ = normalise_frame(physical_frame(), use_z=use_z)
+    vector, _ = normalise(physical_frame(), use_z=use_z)
     assert vector.shape == (lm.feature_dim(use_z),)
     assert vector.dtype == np.float32
 
 
 def test_dropping_z_preserves_the_x_and_y_channels() -> None:
-    with_z, _ = normalise_frame(physical_frame(), use_z=True)
-    without_z, _ = normalise_frame(physical_frame(), use_z=False)
+    with_z, _ = normalise(physical_frame(), use_z=True)
+    without_z, _ = normalise(physical_frame(), use_z=False)
     for block, _ in lm.FEATURE_LAYOUT:
         xyz = with_z[lm.block_slice(block, True)].reshape(-1, 3)
         xy = without_z[lm.block_slice(block, False)].reshape(-1, 2)

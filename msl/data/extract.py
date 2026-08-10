@@ -110,6 +110,17 @@ class ClipLandmarks:
         return int(self.features.shape[0])
 
     @property
+    def aspect(self) -> float:
+        """width/height, for the manifest (spec S4).
+
+        Recorded per clip because it is a property of the camera that produced
+        the clip, not of the project. A corpus mixing 16:9 and 4:3 sources is
+        fine as long as each clip's correction was derived from its own frame
+        size; it is silently wrong the moment one constant is assumed for all.
+        """
+        return self.width / self.height
+
+    @property
     def hand_visibility(self) -> np.ndarray:
         """(T, 2) mask: per frame, whether the left/right hand was detected."""
         return self.features[:, lm.visibility_slice(self.use_z)]
@@ -141,24 +152,33 @@ def _as_points(array: np.ndarray | None, expected: int, name: str) -> np.ndarray
     return points
 
 
-def apply_aspect(points: np.ndarray, aspect: float) -> np.ndarray:
+def apply_aspect(points: np.ndarray, width: int, height: int) -> np.ndarray:
     """Rescale x into units of image height, leaving y and z alone.
 
-    `aspect` is width/height. See the module docstring: without this, horizontal
-    and vertical distances are not comparable and the inter-shoulder divisor --
-    which is almost entirely horizontal -- is wrong relative to the vertical
-    hand motion it is meant to normalise.
+    Takes the frame's actual pixel dimensions rather than a precomputed
+    constant, because the correction must be re-derived from whatever camera or
+    corpus produced the frame (spec S4). AUTSL is one aspect ratio and a webcam
+    is likely another; carrying a training-time constant into `realtime.py`
+    would reintroduce exactly the distortion this corrects, at the point where
+    it is hardest to notice.
+
+    Without this, horizontal and vertical distances are not comparable and the
+    inter-shoulder divisor -- almost entirely horizontal -- is wrong relative to
+    the vertical hand motion it is meant to normalise.
     """
+    if width <= 0 or height <= 0:
+        raise ValueError(f"invalid frame size {width}x{height}")
     out = points.copy()
-    out[:, 0] *= aspect
+    out[:, 0] *= width / height
     return out
 
 
 def normalise_frame(
     frame: FrameLandmarks,
     *,
+    width: int,
+    height: int,
     use_z: bool = True,
-    aspect: float = 1.0,
     min_shoulder_distance: float = 1e-3,
 ) -> tuple[np.ndarray, bool]:
     """Pack one frame into its feature vector.
@@ -175,7 +195,7 @@ def normalise_frame(
     if pose is None:
         return vector, False
 
-    pose = apply_aspect(pose, aspect)
+    pose = apply_aspect(pose, width, height)
     left_shoulder = pose[lm.LEFT_SHOULDER_POS]
     right_shoulder = pose[lm.RIGHT_SHOULDER_POS]
 
@@ -196,7 +216,7 @@ def normalise_frame(
         if points is None:
             continue  # leave zeros; for hands the mask below says why
         if name != "pose":
-            points = apply_aspect(points, aspect)
+            points = apply_aspect(points, width, height)
         centred = (points - origin) / scale
         vector[lm.block_slice(name, use_z)] = centred[:, :coords].reshape(-1)
 
@@ -220,15 +240,15 @@ def pack_clip(
     """Normalise every frame of a clip into a (T, n_features) tensor."""
     if height <= 0 or width <= 0:
         raise ValueError(f"invalid frame size {width}x{height}")
-    aspect = width / height
 
     vectors = np.zeros((len(frames), lm.feature_dim(use_z)), dtype=np.float32)
     present = np.zeros(len(frames), dtype=bool)
     for i, frame in enumerate(frames):
         vectors[i], present[i] = normalise_frame(
             frame,
+            width=width,
+            height=height,
             use_z=use_z,
-            aspect=aspect,
             min_shoulder_distance=min_shoulder_distance,
         )
     return ClipLandmarks(

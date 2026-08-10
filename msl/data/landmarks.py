@@ -47,11 +47,18 @@ N_HAND_LANDMARKS: Final[int] = 21
 # polar questions and mouthing disambiguates otherwise-identical manual signs,
 # so we keep lips, eyebrows and eye corners.
 #
-# PROVISIONAL: these are canonical MediaPipe FaceMesh indices taken from the
-# published topology. Milestone 1 must verify them against the installed
-# MediaPipe version by rendering the overlay -- if the topology differs, fix the
-# tuples here and nothing else changes, since every other module derives its
-# dimensions from FEATURE_LAYOUT below.
+# The installed model returns 478 points, not 468: MediaPipe 1.0's bundle uses
+# "facemesh2_lite" ("Detects 478 face landmarks" per its own tflite metadata),
+# which is the 468-point canonical mesh plus 10 iris points appended at indices
+# 468-477. Every index below is < 468, so all of them address canonical mesh
+# points and none collide with the iris block.
+#
+# PROVISIONAL, still: knowing the *count* does not prove that index 61 is a lip
+# corner on this model. The published topology says it is and the first 468
+# points are documented as unchanged, but only rendering the overlay on a real
+# face confirms the semantics. If any tuple turns out wrong, fix it here and
+# nothing else changes -- every other module derives its dimensions from
+# FEATURE_LAYOUT below.
 LIPS_OUTER_INDICES: Final[tuple[int, ...]] = (
     61, 146, 91, 181, 84, 17, 314, 405, 321, 375,
     291, 409, 270, 269, 267, 0, 37, 39, 40, 185,
