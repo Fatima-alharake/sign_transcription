@@ -58,7 +58,11 @@ HOLISTIC_MODEL_URL = (
 )
 
 # Bumped when the packing logic changes in a way that invalidates cached .npy.
-EXTRACTOR_VERSION = 1
+# v2: the left/right eyebrow index tuples in landmarks.py were inverted relative
+# to MediaPipe's own topology tables. Correcting the names swapped those two
+# 5-point blocks' positions inside the face block, so any v1 tensor has ten
+# points in the wrong slots.
+EXTRACTOR_VERSION = 2
 
 
 class MissingModelAssetError(RuntimeError):

@@ -53,21 +53,49 @@ N_HAND_LANDMARKS: Final[int] = 21
 # 468-477. Every index below is < 468, so all of them address canonical mesh
 # points and none collide with the iris block.
 #
-# PROVISIONAL, still: knowing the *count* does not prove that index 61 is a lip
-# corner on this model. The published topology says it is and the first 468
-# points are documented as unchanged, but only rendering the overlay on a real
-# face confirms the semantics. If any tuple turns out wrong, fix it here and
-# nothing else changes -- every other module derives its dimensions from
-# FEATURE_LAYOUT below.
+# These tuples are pinned to MediaPipe's own topology tables
+# (`mediapipe.tasks.python.vision.FaceLandmarksConnections`) by
+# tests/test_topology.py, which is skipped when MediaPipe is absent. Keeping the
+# constants here rather than importing those tables is deliberate: this module
+# must stay importable with no MediaPipe installed (Milestone 0), and config.py
+# imports it. The guard test is what keeps the copy honest -- it is how the
+# left/right eyebrow inversion below was found.
+#
+# STILL PROVISIONAL, narrowly: the tables prove these indices are what MediaPipe
+# *declares* lips and eyebrows to be. They do not prove the bundled tflite emits
+# its points in that order. Only the overlay on a real face closes that gap.
+#
+# Naming is subject-relative throughout, matching PoseLandmark (LEFT_SHOULDER is
+# the signer's own left). On an unmirrored frame the signer's left appears on
+# the viewer's right.
+
+# Outer lip contour, traversed as a closed ring: the lower lip left-to-right,
+# then back along the upper lip. Ring order matters for the overlay -- a correct
+# ordering draws a clean lip outline and a scrambled one draws a star, which
+# makes the polyline itself a test of the ordering.
 LIPS_OUTER_INDICES: Final[tuple[int, ...]] = (
     61, 146, 91, 181, 84, 17, 314, 405, 321, 375,
     291, 409, 270, 269, 267, 0, 37, 39, 40, 185,
 )
-LEFT_EYEBROW_INDICES: Final[tuple[int, ...]] = (70, 63, 105, 66, 107)
-RIGHT_EYEBROW_INDICES: Final[tuple[int, ...]] = (300, 293, 334, 296, 336)
-# Inner and outer corner of each eye -- enough to capture eye aperture and gaze
-# direction shifts without carrying the full eye contour.
-EYE_CORNER_INDICES: Final[tuple[int, ...]] = (33, 133, 362, 263)
+
+# Upper contour of each eyebrow, in chain order. MediaPipe's full eyebrow group
+# is 10 points (an upper and a lower chain); the upper chain alone is enough to
+# track eyebrow *height*, which is the grammatical signal -- eyebrow raise marks
+# polar questions (spec S4).
+#
+# These two were inverted until the guard test caught it: (70, 63, 105, 66, 107)
+# reads as the signer's left eyebrow if you assume viewer-relative naming, but
+# MediaPipe lists it under FACE_LANDMARKS_RIGHT_EYEBROW. Both tuples were always
+# valid eyebrow chains, so nothing downstream ever looked broken -- exactly the
+# silent left/right swap that spec S4b treats as a first-class hazard.
+LEFT_EYEBROW_INDICES: Final[tuple[int, ...]] = (300, 293, 334, 296, 336)
+RIGHT_EYEBROW_INDICES: Final[tuple[int, ...]] = (70, 63, 105, 66, 107)
+
+# Two corners of each eye -- enough for eye aperture and gaze-direction shifts
+# without carrying the full 16-point eye contour. Which member of each pair is
+# the inner versus the outer corner is not something the connection tables
+# state; it does not affect the feature vector, only how you read a label.
+EYE_CORNER_INDICES: Final[tuple[int, ...]] = (362, 263, 33, 133)
 
 FACE_INDICES: Final[tuple[int, ...]] = (
     LIPS_OUTER_INDICES
@@ -122,3 +150,67 @@ def visibility_slice(use_z: bool = True) -> slice:
     """Slice selecting the two trailing per-hand visibility scalars."""
     total = feature_dim(use_z)
     return slice(total - N_VISIBILITY_CHANNELS, total)
+
+
+# --- Drawing topology ------------------------------------------------------
+# Skeleton edges for the overlay renderer (spec S10.1, and the live preview in
+# S4a). Expressed as positions *within our kept subsets*, never as raw MediaPipe
+# indices, because the renderer only ever sees already-subset arrays. Doing the
+# raw -> subset mapping once, here, is what stops the overlay from drawing a
+# plausible-looking skeleton out of the wrong points.
+#
+# Pinned to MediaPipe's shipped connection tables by tests/test_topology.py.
+
+# Upper-body pose edges, in RAW MediaPipe pose indices.
+_POSE_EDGES_RAW: Final[tuple[tuple[int, int], ...]] = (
+    (11, 12),                                # shoulder line
+    (11, 13), (13, 15),                      # left upper arm, forearm
+    (12, 14), (14, 16),                      # right upper arm, forearm
+    (11, 23), (12, 24), (23, 24),            # torso
+    (15, 17), (15, 19), (15, 21), (17, 19),  # left hand stub
+    (16, 18), (16, 20), (16, 22), (18, 20),  # right hand stub
+)
+
+# The nose (raw 0) is kept as a head-position anchor but has no edge to anything
+# we retained -- MediaPipe's own face edges run to eyes and ears, which we drop.
+# It renders as an isolated point, which is correct rather than an omission.
+
+_POSE_POS: Final[dict[int, int]] = {raw: i for i, raw in enumerate(POSE_INDICES)}
+
+POSE_CONNECTIONS: Final[tuple[tuple[int, int], ...]] = tuple(
+    (_POSE_POS[a], _POSE_POS[b]) for a, b in _POSE_EDGES_RAW
+)
+
+# Hand edges. Hands keep all 21 points, so subset position == raw index and no
+# mapping is needed. Standard MediaPipe hand skeleton: wrist to each finger
+# base, then along each finger, plus the knuckle line across the palm.
+HAND_CONNECTIONS: Final[tuple[tuple[int, int], ...]] = (
+    (0, 1), (1, 2), (2, 3), (3, 4),            # thumb
+    (1, 5), (5, 6), (6, 7), (7, 8),            # index (joins the thumb at 1,
+                                               # not the wrist -- guard test)
+    (5, 9), (9, 10), (10, 11), (11, 12),       # middle
+    (9, 13), (13, 14), (14, 15), (15, 16),     # ring
+    (13, 17), (17, 18), (18, 19), (19, 20),    # pinky
+    (0, 17),                                   # palm closure
+)
+
+_FACE_POS: Final[dict[int, int]] = {raw: i for i, raw in enumerate(FACE_INDICES)}
+
+
+def _face_group(raw_indices: tuple[int, ...]) -> tuple[int, ...]:
+    """Raw mesh indices -> their positions within FACE_INDICES."""
+    return tuple(_FACE_POS[i] for i in raw_indices)
+
+
+# (name, positions within FACE_INDICES, closed). `closed` draws the last point
+# back to the first: the lips are a ring, the eyebrows are open chains, and the
+# eye corners are isolated points with no contour between them.
+FACE_GROUPS: Final[tuple[tuple[str, tuple[int, ...], bool], ...]] = (
+    ("lips", _face_group(LIPS_OUTER_INDICES), True),
+    ("left_eyebrow", _face_group(LEFT_EYEBROW_INDICES), False),
+    ("right_eyebrow", _face_group(RIGHT_EYEBROW_INDICES), False),
+    ("eye_corners", _face_group(EYE_CORNER_INDICES), False),
+)
+
+# Groups whose points are drawn but not joined by a contour.
+FACE_POINT_ONLY_GROUPS: Final[frozenset[str]] = frozenset({"eye_corners"})
