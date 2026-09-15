@@ -58,6 +58,16 @@ go-ahead. Do not chain milestones.
   appear in train, so val accuracy is inflated and means nothing as a measure of
   generalisation. TEST is the honest number: signer-disjoint, never touched for model
   selection. Never put a val number in a report, a plot title, or a README.
+- CACHED-METRIC RECOVERY RESTS ON TWO INVARIANTS OF normalise_frame, and breaks
+  SILENTLY if either changes. wlasl_loader.rates_from_features() recovers pose and
+  hand presence from a cached .npy alone, because (a) normalise_frame returns an
+  all-zero vector EXACTLY when there is no usable pose, and (b) any frame that did
+  normalise has the shoulders at +/-0.5 and so can never be all-zero. If
+  normalisation ever emits a non-zero vector for a pose-less frame, or an all-zero
+  vector for a valid one, every cached clip silently gets the wrong pose_rate and is
+  then filtered out of training without an error. Change extract.py's normalisation
+  and you must revisit rates_from_features. The failure it already caused once:
+  cache hits reported pose_rate 0.0 and were dropped from the dataset on every re-run.
 - MediaPipe HolisticLandmarker RETAINS STATE ACROSS detect() CALLS, even in IMAGE
   running mode (segmentation smoothing). Feeding it a different frame size than the
   previous call crashes the graph: "RET_CHECK failure ... current_mat->rows ==
@@ -74,6 +84,24 @@ go-ahead. Do not chain milestones.
   about 1% of the file. Do NOT crop to bbox: the bbox does not correspond to the raw
   video we downloaded (IoU ~0.1 against where MediaPipe finds the person) and cropping
   measurably destroys detection.
+- data/wlasl/extract_log_firstpass.csv IS THE SOLE SURVIVING RECORD of per-clip
+  source width/height/fps/frames_in for WLASL100, and is committed to the repo
+  for that reason (one narrow .gitignore exception, walked down level by level --
+  a `!` rule cannot re-admit a file under an excluded directory). Spec §4
+  requires aspect ratio per clip; the cached .npy does not store frame
+  dimensions, so a cache-only extraction run writes width=0, height=0, fps=0 for
+  every row. Verified: all 1115 real-extraction rows in that log have width>0,
+  and all 1127 rows of the cache-only extract_log.csv have width=0. NEVER delete
+  it, and never "refresh" it by re-running extraction against a warm cache --
+  that silently replaces real resolutions with zeros and the information is gone,
+  because the videos are 55.3% of a corpus whose missing half is unrecoverable.
+  Re-deriving it requires deleting the cache and re-extracting all 1127 clips.
+- RELATED LATENT GITIGNORE BUG, not yet fixed: the `!**/manifest.csv` and
+  `!**/signers.csv` whitelists are unreachable for anything under the data root,
+  for the same parent-directory reason. Spec §4a requires manifest.csv and
+  signers.csv to be version-controlled. If capture.py writes them under
+  data_root they will be silently untracked -- confirmed empirically, not
+  assumed. Settle this when open decision 1 (manifest schema) is settled.
 - Known limitations to restate wherever WLASL numbers appear: (a) signer_id
   reliability is unverified and the split is only as good as those labels, WLASL
   aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary
@@ -88,9 +116,19 @@ go-ahead. Do not chain milestones.
   signer-dependent number stand unqualified.
 
 ## Environment — already set up, do not redo
-uv sync done. torch 2.13.0+cu130, CUDA available, RTX 3060. mediapipe 1.0.0,
-opencv 5.0.0, numpy 2.4.6. Model bundle at assets/holistic_landmarker.task
-(13.7 MB, gitignored). Windows + PowerShell primary; Bash also available.
+uv sync done. Python 3.11.9, torch 2.13.0+cu130, CUDA available, RTX 5090.
+mediapipe 1.0.0, opencv 5.0.0, numpy 2.4.6. Model bundle at
+assets/holistic_landmarker.task (13.7 MB, gitignored). Windows + PowerShell
+primary; Bash also available.
+
+The machine changed on 2026-09-15: the project moved by flash drive from an
+RTX 3060 box to an RTX 5090 one, and .venv was NOT copied. `uv sync` on the new
+machine reproduced the same pinned versions; 172 tests pass; the landmark cache
+and raw videos transferred intact (verified: all 1127 content-digest cache keys
+re-derive to the same filenames). Any earlier note in this file saying RTX 3060
+is stale. The `num_workers: 0` default in the configs was chosen for the old
+16GB box and is now a conservative setting rather than a necessary one --
+revisit it when training, do not assume it is tuned.
 
 ## Open decisions — ask, do not choose
 1. Manifest schema conflict: §4a defines 16 columns (incl. resolution, mirrored);

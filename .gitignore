@@ -62,3 +62,23 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# ---------------------------------------------------------------------------
+# One narrow exception, walked down level by level.
+#
+# A `!` rule cannot re-admit a file whose parent directory is excluded -- git
+# never descends into an excluded directory to see it. So `data/` above makes
+# the `!**/manifest.csv` whitelist unreachable for anything under the data root,
+# and re-admitting one file means un-excluding each directory on its path and
+# re-excluding that directory's other contents.
+#
+# extract_log_firstpass.csv is the ONLY surviving record of per-clip source
+# width/height/fps for the WLASL100 corpus. Spec S4 requires aspect ratio per
+# clip, and a cache-only extraction run cannot reproduce these columns -- the
+# tensor does not store them. It is 184 KB of text and it is not regenerable.
+# ---------------------------------------------------------------------------
+!data/
+data/*
+!data/wlasl/
+data/wlasl/*
+!data/wlasl/extract_log_firstpass.csv
