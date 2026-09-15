@@ -237,7 +237,18 @@ zero-length as failure and validates that every file actually decodes.
 
 #### What actually downloaded
 
-Measured from `data/wlasl/download_log_100.csv`, not from metadata:
+`data/wlasl/download_log_100.csv` records one row per attempted clip:
+`video_id, gloss, gloss_id, split, signer_id, source, host, status, http_code,
+bytes, frames, width, height, fps, url, note`.
+
+> **`frames` is capped at `MAX_PROBE_FRAMES = 900`.** Validation stops decoding
+> there, so for the 128 clips that reach the cap the column is a **lower bound,
+> not a frame count** — their true lengths run to 12,232. Those 128 are exactly
+> the clips carrying a trim range, so nothing downstream depends on the capped
+> value, but do not compute durations from this column. Read the true count from
+> the file.
+
+Measured from that log, not from metadata:
 
 ```
 attempted        2038
@@ -312,6 +323,53 @@ whether the model recognises two particular people. Preferring many small
 signers costs 1.3 points of holdout and buys 51. The cost is that training sees
 fewer distinct signers, which is a consequence of one signer holding 21.5% of
 the corpus, and is worth revisiting once the missing clips land.
+
+#### Trimming, bbox, and the val split
+
+**`frame_start`/`frame_end` must be honoured.** 132 of 1127 clips (11.7%) are
+segments cut from long compilation videos (`asl5200`, `northtexas`), whose true
+length runs to a median of 7,221 frames and a maximum of 12,232. The labelled
+sign occupies about 1% of the file. Trimming discards 844,091 of those clips'
+853,865 frames — 91.1% of every frame in the corpus. Post-trim, all 1127 clips
+run 19–212 frames, median 72.
+
+**Do not crop to `bbox`.** Tested rather than assumed, on the six clips with the
+smallest bbox coverage, where cropping should help most:
+
+```
+                     pose / Lhand / Rhand / face  (detection rate)
+full frame            0.76 / 0.11 / 0.30 / 0.76
+cropped to bbox       0.40 / 0.03 / 0.06 / 0.02
+cropped + upscaled    0.10 / 0.01 / 0.00 / 0.02
+```
+
+Cropping is not redundant, it is harmful, and upscaling the crop is worse still,
+so it is not a resolution effect. The cause: **the bbox does not correspond to
+the video we downloaded.** Against the region where MediaPipe actually finds the
+person, the metadata bbox scores IoU ≈ 0.05–0.12, and the mismatch is a
+translation rather than a scale error — the boxes are close to the right *size*
+and in the wrong *place*. **A falsifiable prediction, not a conclusion.** The evidence — a translation
+error at near-correct scale (IoU 0.05–0.12, boxes the right size in the wrong
+place) — points to these coordinates describing the maintainers' *pre-processed*
+videos rather than the raw source URLs. That is a claim that can be checked: **if
+the request route lands, the bbox should agree with the pre-processed video.**
+Check it then. Do not assume it will, and do not assume it will not; if it still
+disagrees, the explanation is wrong and the bbox is simply unreliable.
+
+Either way, MediaPipe localises the person itself and does it better than a stale
+box, so nothing currently depends on resolving this.
+
+`bbox` is `[x1, y1, x2, y2]`, and 9 of 1127 are out of bounds for our file
+(all `aslu`, where the bbox assumes 1280x720 and we received 720x480), so it is
+useful only as a weak sanity signal, never as a crop.
+
+**Val is signer-dependent, and is never a result.** Val is a clip-level split
+inside the training signers, used solely as a stopping criterion. A
+signer-disjoint val is possible but costs 15 of the 18 training signers — 412
+clips, 52.2% of training data — leaving training with 377 clips from 3 signers.
+That trades the reported number's honesty for nothing, because test already
+provides it. **Test is the honest, signer-disjoint number; val accuracy is
+inflated and must never appear in a report, a plot title, or this README.**
 
 #### Known limitations
 

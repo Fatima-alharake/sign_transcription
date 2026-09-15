@@ -53,6 +53,27 @@ go-ahead. Do not chain milestones.
   12 of 100 glosses with no test clip while still reporting 100 classes. The ~20%
   target is soft; the constraint is hard. Achieved: 30.0% holdout, 51 held-out
   signers, 100/100 glosses on both sides.
+- VAL IS SIGNER-DEPENDENT and is never a reported result. It is a clip-level split
+  inside the training signers, used only as a stopping criterion. Signers in val also
+  appear in train, so val accuracy is inflated and means nothing as a measure of
+  generalisation. TEST is the honest number: signer-disjoint, never touched for model
+  selection. Never put a val number in a report, a plot title, or a README.
+- MediaPipe HolisticLandmarker RETAINS STATE ACROSS detect() CALLS, even in IMAGE
+  running mode (segmentation smoothing). Feeding it a different frame size than the
+  previous call crashes the graph: "RET_CHECK failure ... current_mat->rows ==
+  previous_mat->rows". Use one landmarker per video, or per input size. This is safe
+  in extract.py today only because LandmarkExtractor is opened per video; reusing one
+  across a mixed-resolution corpus (WLASL has 15 distinct resolutions) would crash.
+- MediaPipe EXTRAPOLATES pose landmarks outside the frame. Hip/knee/ankle points come
+  back with normalised y above 1.0 (observed up to 2.04) when the signer is framed
+  from the waist up. Any bounding box or extent computed from raw pose landmarks must
+  clamp to [0,1] and use the upper-body subset first, or it is garbage. An unclamped
+  person-extent computation already produced a wrong answer once.
+- WLASL frame_start/frame_end MUST be honoured when extracting. 132 of 1127 clips are
+  segments of long compilation videos (median 7221 frames); the labelled sign occupies
+  about 1% of the file. Do NOT crop to bbox: the bbox does not correspond to the raw
+  video we downloaded (IoU ~0.1 against where MediaPipe finds the person) and cropping
+  measurably destroys detection.
 - Known limitations to restate wherever WLASL numbers appear: (a) signer_id
   reliability is unverified and the split is only as good as those labels, WLASL
   aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary
