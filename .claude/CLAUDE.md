@@ -9,6 +9,45 @@ msl-recognition-spec.md. Read it before acting — especially §4 (normalisation
 One milestone at a time: implement, run it, show output, then STOP and wait for
 go-ahead. Do not chain milestones.
 
+## Current state — WLASL100 backbone (ASL, not MSL)
+
+Every number here is AMERICAN SIGN LANGUAGE on a corpus that is 55.3% complete
+(1127 of 2038 clips), signer-disjoint test, 338 test clips, 100 classes, chance
+top-1 1.0%. Never quote one without that label. Val is never reported.
+
+**Reference variant: transformer + spec §5 augmentation**, 3 seeds
+(1234/2345/3456), untuned:
+
+| variant | top-1 | top-5 | macro F1 |
+|---|---|---|---|
+| baseline, no augmentation | 0.4053 +/- 0.0207 | 0.6815 +/- 0.0061 | 0.3834 +/- 0.0235 |
+| **+ augmentation (reference)** | **0.4300 +/- 0.0120** | **0.7041 +/- 0.0119** | **0.3970 +/- 0.0088** |
+
+Read per metric, not as one verdict: top-5 separates cleanly (every augmented
+seed beats every baseline seed, ranges disjoint); top-1 is borderline (+2.47pp
+against a baseline sd of 2.07pp, ranges still overlap); macro F1 sits inside the
+spread with the augmented range contained in the baseline range.
+
+THREE SEEDS MINIMUM FOR EVERY VARIANT FROM HERE, reported as mean and spread.
+A single run is unreadable: the baseline's own seed-to-seed top-1 range is 4.1pp
+wide. This already misled once -- a single-seed pair showed +1.78pp top-1 from
+augmentation, which a paired McNemar put at p = 0.556. Use msl/train/sweep.py;
+it prints mean, sd and min/max and refuses to summarise val. Note the ceiling:
+with 3 v 3 seeds the smallest achievable two-sided rank p is 0.1, so perfect
+separation cannot reach p < 0.05 by construction -- non-overlapping ranges are
+the strongest evidence 3 seeds can give.
+
+**Next step: drop the black-separator frames from the 36 affected clips**
+(frames, not clips), then TCN, then the use_z ablation. Each at 3 seeds against
+the reference above.
+
+RUN ARTIFACTS DO NOT SURVIVE A FRESH CLONE. `runs/` and `checkpoints/` are both
+gitignored, and zero files under them are tracked, so sweep_metrics.json, the
+confusion matrices and every checkpoint are local-only. They are reproducible --
+the pipeline is deterministic and seed 1234 re-runs exactly -- at roughly 15
+minutes per 3-seed sweep. If a sweep result ever needs to outlive the machine,
+commit its sweep_metrics.json the way the WLASL logs were committed.
+
 ## Hard-won facts — do not re-derive or contradict
 - MediaPipe 1.0 REMOVED `mediapipe.solutions` entirely. Legacy Holistic does not
   exist; every tutorial built on it fails at import. Use the Tasks API
