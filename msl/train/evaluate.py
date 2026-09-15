@@ -193,6 +193,55 @@ def plot_curves(
     return out_path
 
 
+# Categorical slots 1-3. These three validate all-pairs CVD separation, which
+# is the gate that matters when three lines overlap rather than sit adjacent.
+SEED_SERIES = ("#2a78d6", "#eb6834", "#1baf7a")
+
+
+def plot_loss_seeds(
+    losses_by_seed: dict[int, list[float]],
+    out_path: str | Path,
+    title: str,
+    smooth: int = 25,
+) -> Path:
+    """Training loss for each seed of one variant, on a single axis.
+
+    Loss only -- no val panel. Val is a stopping criterion, and a sweep figure
+    that carries it invites someone to read the spread of a number that is not
+    a result.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    fig.patch.set_facecolor(SURFACE)
+    for i, (seed, losses) in enumerate(sorted(losses_by_seed.items())):
+        colour = SEED_SERIES[i % len(SEED_SERIES)]
+        steps = np.arange(1, len(losses) + 1)
+        if len(losses) >= smooth > 1:
+            kernel = np.ones(smooth) / smooth
+            rolling = np.convolve(losses, kernel, mode="valid")
+            ax.plot(steps[smooth - 1:], rolling, color=colour, linewidth=2.0,
+                    label=f"seed {seed}")
+        else:
+            ax.plot(steps, losses, color=colour, linewidth=2.0,
+                    label=f"seed {seed}")
+    _style(ax)
+    ax.set_xlabel("step", color=INK_MUTED, fontsize=9)
+    ax.set_ylabel(f"training loss ({smooth}-step mean)", color=INK_MUTED, fontsize=9)
+    ax.set_title(title, color=INK, fontsize=10, loc="left", pad=10)
+    legend = ax.legend(loc="upper right", frameon=False, fontsize=8)
+    for text in legend.get_texts():
+        text.set_color(INK_MUTED)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=170, bbox_inches="tight", facecolor=SURFACE)
+    plt.close(fig)
+    return out_path
+
+
 def plot_confusion(
     confusion: np.ndarray,
     glosses: list[str],
