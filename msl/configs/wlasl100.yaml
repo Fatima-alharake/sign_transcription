@@ -1,0 +1,46 @@
+# WLASL100 backbone pretraining -- AMERICAN SIGN LANGUAGE, not MSL.
+#
+# Every number produced from this config is an ASL number, on a corpus that is
+# 55.3% complete (1127 of 2038 clips; 911 lost to dead hosts and private
+# videos). It exists to pretrain a backbone, never to supply MSL vocabulary.
+#
+# DELIBERATELY NOT TUNED. These are the spec S6 defaults with only the values
+# that *must* differ for a 100-class, 666-clip corpus changed (batch size,
+# step budget, warmup, eval cadence). No augmentation, no architecture search,
+# no learning-rate sweep. The number this produces is a floor to improve on,
+# not a result to report as the model's capability.
+
+feature:
+  use_z: true
+  seq_len: 64
+
+model:
+  arch: transformer    # spec S6 baseline. TCN is the one to beat -- see README.
+  d_model: 128
+  n_layers: 4
+  n_heads: 4
+  ffn_dim: 256
+  dropout: 0.3         # small-data regime: regularise hard
+  tcn_kernel_size: 5
+
+train:
+  batch_size: 32       # 666 training clips -> ~21 steps per epoch
+  lr: 0.001
+  weight_decay: 0.01
+  max_steps: 4000      # ~192 epochs; early stopping is expected to fire first
+  warmup_steps: 200
+  label_smoothing: 0.1
+  grad_clip: 1.0
+  eval_every: 50       # ~2.4 epochs
+  patience: 12         # 600 steps without a val top-1 improvement
+  seed: 1234
+  num_workers: 0
+  out_dir: checkpoints/wlasl100
+  log_dir: runs/wlasl100
+  tensorboard: true
+
+synthetic:
+  n_train: 128
+  n_val: 32
+  num_classes: 100     # unused on this path; kept consistent with the vocabulary
+  seed: 0

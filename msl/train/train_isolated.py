@@ -77,13 +77,20 @@ def train(
     device: torch.device | None = None,
     vocab: Vocab | None = None,
     verbose: bool = True,
+    loaders: tuple[DataLoader, DataLoader] | None = None,
 ) -> TrainResult:
-    """Train an isolated-sign classifier on synthetic tensors."""
+    """Train an isolated-sign classifier.
+
+    `loaders` lets a caller supply real (train, val) DataLoaders; without it the
+    synthetic source is used, which is all Milestone 0 needs. The loop itself is
+    source-agnostic -- it only ever sees `(B, T, F)` tensors and integer labels,
+    and the labels must be indices into `vocab`, not arbitrary ids.
+    """
     device = device or resolve_device("auto")
     seed_everything(cfg.train.seed)
 
     vocab = vocab or placeholder_vocab(cfg.synthetic.num_classes)
-    train_loader, val_loader = build_synthetic_loaders(cfg)
+    train_loader, val_loader = loaders if loaders is not None else build_synthetic_loaders(cfg)
 
     model = build_model(cfg, num_classes=len(vocab)).to(device)
     criterion = nn.CrossEntropyLoss(label_smoothing=cfg.train.label_smoothing)

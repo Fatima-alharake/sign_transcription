@@ -429,7 +429,14 @@ class WlaslLandmarkDataset:
             if r["split"] == split and r["status"] in USABLE and r["cache"]
             and float(r["pose_rate"] or 0) >= min_pose_rate
         ]
-        self.glosses = sorted({r["gloss"] for r in rows}, key=lambda g: g)
+        # Ordered by gloss_id, NOT alphabetically. __getitem__ returns
+        # gloss_id as the label, so the vocabulary must be indexed the same way
+        # or every class name on a confusion matrix is wrong while the accuracy
+        # still looks fine. WLASL's gloss_ids are not in alphabetical order
+        # (id 0 is "book", id 1 "drink"), so sorting by name silently permutes
+        # the labels.
+        by_id = {int(r["gloss_id"]): r["gloss"] for r in rows}
+        self.glosses = [by_id[i] for i in range(len(by_id))]
 
     def __len__(self) -> int:
         return len(self.rows)
