@@ -44,6 +44,15 @@ go-ahead. Do not chain milestones.
   alongside it, marked signer-dependent and optimistic. The official number must
   never appear alone -- not in the README, not in a plot title, not in a commit
   message.
+- The WLASL100 corpus on disk is 55.3% complete (1127 of 2038 clips; 911 missing to
+  dead hosts and private videos). Every number computed before the maintainers'
+  pre-processed-video request lands must say so, alongside the ASL label.
+- The signer-independent split is built by msl/data/wlasl_split.py under a TWO-SIDED
+  constraint: every gloss keeps both training clips and at least one held-out test
+  clip. Enforcing only the training side is a bug that already occurred -- it left
+  12 of 100 glosses with no test clip while still reporting 100 classes. The ~20%
+  target is soft; the constraint is hard. Achieved: 30.0% holdout, 51 held-out
+  signers, 100/100 glosses on both sides.
 - Known limitations to restate wherever WLASL numbers appear: (a) signer_id
   reliability is unverified and the split is only as good as those labels, WLASL
   aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary

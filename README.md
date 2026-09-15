@@ -235,6 +235,84 @@ length, so a naive downloader writes an error page to `{video_id}.mp4` and a
 resume-by-existence check then trusts it forever. The downloader here treats
 zero-length as failure and validates that every file actually decodes.
 
+#### What actually downloaded
+
+Measured from `data/wlasl/download_log_100.csv`, not from metadata:
+
+```
+attempted        2038
+usable           1127   (55.3%)
+glosses          100/100 surviving, min 6 / median 11 / max 17 clips
+signers            69   (from 97 in metadata), top-10 = 61.4%, signer 5 alone = 21.5%
+disk             1.2 GB video + 14 MB metadata
+
+http_error    563   signingsavvy 225, handspeak 174, aslpro 162, aslsignbank 2
+ytdlp_failed  234   youtube.com 138, youtu.be 96 (all "Private video")
+undecodable   114   aslsearch, all of them
+```
+
+The 96 `youtu.be` failures are a single contributor — signer 109, source
+`asllex` — whose channel went private, not scattered rot.
+
+#### Estimate post-mortem: the risk named in prose but not in the arithmetic
+
+The pre-download projection said ~1,272 usable (62%). The actual figure is
+1,127 — **short by 144 clips**. The obvious suspect was the YouTube survival
+assumption. It was not the cause:
+
+| source | predicted | actual | delta |
+|---|---|---|---|
+| YouTube (both hosts) | 479 | 451 | **−28** |
+| `aslsearch.com` | 114 | 0 | **−114** |
+| everything else | 679 | 676 | −2 |
+
+YouTube came in at 65.8% against an assumed 70% — essentially right.
+**79% of the error was aslsearch**, a host whose reachability probe returned
+`200` for every sample and which was therefore scored as fully surviving. Its
+bodies are ~114 bytes of non-video. The hazard had *already been identified in
+prose* in the same report that projected it at 100% survival.
+
+**The general lesson, because this will recur:** a risk written down in prose
+is not a risk carried into the arithmetic. Any caveat that qualifies a number
+has to change the number, or it is decoration. Where a caveat cannot be
+quantified, the estimate should carry a range rather than a point value.
+
+That the 114 clips are recorded as `undecodable` rather than sitting on disk as
+plausible `.mp4` files is entirely down to the decode check — a zero-length
+rule alone would have passed all of them, since 114 bytes is not zero.
+
+#### 911 clips are missing, and the corpus is 55.3% complete
+
+911 of 2,038 clips did not arrive. The maintainers' pre-processed-video request
+route would likely recover most of them, including signer 109's 96 private
+`asllex` clips, and would restore signer diversity — which link rot damaged
+more than it damaged raw counts (signers per gloss fell from 10/15 min/median
+to 5/9).
+
+**Any result produced before that request lands is computed on a 55.3%-complete
+corpus and must say so**, alongside the ASL label.
+
+#### The signer-independent split, as built
+
+```
+train 789 clips / 18 signers      test 338 clips / 51 signers
+holdout 30.0%                     signer overlap: none
+glosses with training clips: 100/100
+glosses with test clips:     100/100
+```
+
+The ~20% target was not reachable under the two-sided constraint; 30.0% is what
+full coverage costs, and the achieved fraction is reported rather than the
+constraint relaxed or glosses dropped.
+
+One asymmetry to keep in view: the split trains on 18 signers and tests on 51.
+Choosing test coverage greedily by "most glosses per signer" instead satisfies
+the constraint with just **2** held-out signers at 28.7% — a test set measuring
+whether the model recognises two particular people. Preferring many small
+signers costs 1.3 points of holdout and buys 51. The cost is that training sees
+fewer distinct signers, which is a consequence of one signer holding 21.5% of
+the corpus, and is worth revisiting once the missing clips land.
+
 #### Known limitations
 
 - **`signer_id` reliability is unverified.** Our split is only as good as those
