@@ -51,9 +51,12 @@ def build_loaders(
     min_pose_rate: float,
     log_path: Path | None = None,
 ) -> tuple[DataLoader, DataLoader, DataLoader, Vocab]:
+    # augment=True is requested for every split; the dataset itself ignores it
+    # for anything but train, so val stays a stable stopping criterion and test
+    # stays reproducible.
     splits = {
         name: WlaslLandmarkDataset(name, cfg, log_path=log_path,
-                                   min_pose_rate=min_pose_rate)
+                                   min_pose_rate=min_pose_rate, augment=True)
         for name in ("train", "val", "test")
     }
     vocab = Vocab(splits["train"].glosses)
@@ -70,6 +73,10 @@ def build_loaders(
 
     return (loader("train", True), loader("val", False),
             loader("test", False), vocab)
+
+
+def splits_augmented(loader: DataLoader) -> bool:
+    return bool(getattr(loader.dataset, "augment", False))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,6 +110,13 @@ def main(argv: list[str] | None = None) -> int:
           f"val {len(val_loader.dataset)}  test {len(test_loader.dataset)}")
     print(f"vocabulary: {len(vocab)} glosses, ordered by gloss_id "
           f"(first three: {vocab.glosses[:3]})")
+    aug = cfg.augment
+    print(f"augmentation: {'ON' if aug.enabled else 'OFF'}"
+          + (f"  speed {aug.speed_min}-{aug.speed_max}, "
+             f"rot +/-{aug.rotation_degrees} deg, scale {aug.scale_min}-{aug.scale_max}, "
+             f"noise sd {aug.joint_noise_std}, frame dropout {aug.frame_dropout}, "
+             f"mirror {aug.mirror}" if aug.enabled else "")
+          + f"  (train split only: {splits_augmented(train_loader)})")
     print(f"device: {describe_device(device)}\n")
 
     result = train(cfg, device=device, vocab=vocab,
@@ -134,22 +148,28 @@ def main(argv: list[str] | None = None) -> int:
 
     report_dir = args.report_dir
     report_dir.mkdir(parents=True, exist_ok=True)
+    # The figure title must say which run it is: two PNGs whose titles both read
+    # "baseline" are indistinguishable once they leave the directory.
+    variant = "+ spec S5 augmentation" if cfg.augment.enabled else "baseline, no augmentation"
     curves = plot_curves(
         result.losses, result.val_accuracies, cfg.train.eval_every,
         report_dir / "training_curves.png",
-        f"WLASL100 {cfg.model.arch} baseline (ASL, 55.3%-complete corpus)",
+        f"WLASL100 {cfg.model.arch}, {variant} (ASL, 55.3%-complete corpus)",
     )
     matrix = plot_confusion(
         test.confusion, vocab.glosses, report_dir / "confusion_test.png",
-        f"Test confusion, row-normalised -- WLASL100 {cfg.model.arch} "
-        f"(ASL, signer-disjoint, 55.3%-complete corpus)",
+        f"Test confusion, row-normalised -- WLASL100 {cfg.model.arch}, "
+        f"{variant} (ASL, signer-disjoint, 55.3%-complete corpus)",
     )
     summary = {
         "language": "American Sign Language (WLASL100)",
         "corpus_completeness": "55.3% (1127 of 2038 clips)",
         "arch": cfg.model.arch,
         "tuned": False,
-        "augmentation": None,
+        "augmentation": (
+            {k: v for k, v in vars(cfg.augment).items()}
+            if cfg.augment.enabled else None
+        ),
         "test_top1": round(test.top1, 4),
         "test_top5": round(test.top5, 4),
         "test_macro_f1": round(test.macro_f1, 4),

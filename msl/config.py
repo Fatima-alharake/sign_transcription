@@ -95,6 +95,23 @@ class DataConfig:
 
 
 @dataclass(frozen=True)
+class AugmentConfigSection:
+    """Spec S5 augmentation. Off by default so an un-augmented run stays the
+    baseline; see msl/data/augment.py for what each parameter does and why
+    mirroring is opt-in."""
+
+    enabled: bool = False
+    speed_min: float = 0.8
+    speed_max: float = 1.2
+    frame_dropout: float = 0.05
+    rotation_degrees: float = 10.0
+    scale_min: float = 0.9
+    scale_max: float = 1.1
+    joint_noise_std: float = 0.01
+    mirror: bool = False
+
+
+@dataclass(frozen=True)
 class SyntheticConfig:
     """Random-tensor data source (spec S3a.1).
 
@@ -115,6 +132,7 @@ class ExperimentConfig:
     train: TrainConfig = field(default_factory=TrainConfig)
     data: DataConfig = field(default_factory=DataConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
+    augment: AugmentConfigSection = field(default_factory=AugmentConfigSection)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ExperimentConfig":
@@ -124,6 +142,7 @@ class ExperimentConfig:
             "train": TrainConfig,
             "data": DataConfig,
             "synthetic": SyntheticConfig,
+            "augment": AugmentConfigSection,
         }
         unknown = set(raw) - set(sections)
         if unknown:

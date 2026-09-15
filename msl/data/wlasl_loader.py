@@ -33,13 +33,14 @@ import csv
 import json
 import os
 import random
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 from msl.config import DataConfig, ExperimentConfig, FeatureConfig
 from msl.data import landmarks as lm
+from msl.data.augment import AugmentConfig, augment_sequence
 from msl.data.extract import (
     ClipLandmarks,
     VideoReadError,
@@ -400,7 +401,9 @@ def summarise_extraction(log_path: str | Path) -> dict:
 def resample(sequence: np.ndarray, seq_len: int) -> np.ndarray:
     """Linear interpolation onto `seq_len` frames (spec S5)."""
     if sequence.shape[0] == seq_len:
-        return sequence.astype(np.float32, copy=False)
+        # copy=True: the caller may hand us a read-only mmap slice, and torch
+        # refuses to wrap a non-writable array without warning about it.
+        return sequence.astype(np.float32, copy=True)
     source = np.linspace(0.0, 1.0, num=sequence.shape[0])
     target = np.linspace(0.0, 1.0, num=seq_len)
     out = np.empty((seq_len, sequence.shape[1]), dtype=np.float32)
@@ -418,6 +421,7 @@ class WlaslLandmarkDataset:
         cfg: ExperimentConfig,
         log_path: str | Path | None = None,
         min_pose_rate: float = DEFAULT_MIN_POSE_RATE,
+        augment: bool = False,
     ) -> None:
         log_path = Path(log_path or Path(cfg.data.data_root) / "wlasl" / "extract_log.csv")
         with open(log_path, newline="", encoding="utf-8") as handle:
@@ -437,6 +441,12 @@ class WlaslLandmarkDataset:
         # the labels.
         by_id = {int(r["gloss_id"]): r["gloss"] for r in rows}
         self.glosses = [by_id[i] for i in range(len(by_id))]
+        # Augmentation is a TRAIN-ONLY transform. Applying it to val would move
+        # the stopping criterion around for reasons unrelated to the model, and
+        # applying it to test would make the reported number unreproducible.
+        self.augment = augment and split == "train" and cfg.augment.enabled
+        self._aug = AugmentConfig(**asdict(cfg.augment)) if self.augment else None
+        self._rng = np.random.default_rng(cfg.train.seed)
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -446,7 +456,13 @@ class WlaslLandmarkDataset:
 
         row = self.rows[index]
         features = np.load(row["cache"], mmap_mode="r")
-        window = resample(np.asarray(features), self.cfg.feature.seq_len)
+        sequence = np.asarray(features)
+        if self._aug is not None:
+            # Temporal ops change the length, so augment before the resample.
+            sequence = augment_sequence(
+                sequence, self._aug, self.cfg.feature.use_z, self._rng
+            )
+        window = resample(sequence, self.cfg.feature.seq_len)
         return torch.from_numpy(window), int(row["gloss_id"])
 
 
