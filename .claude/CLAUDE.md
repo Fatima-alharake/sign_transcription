@@ -84,18 +84,27 @@ go-ahead. Do not chain milestones.
   about 1% of the file. Do NOT crop to bbox: the bbox does not correspond to the raw
   video we downloaded (IoU ~0.1 against where MediaPipe finds the person) and cropping
   measurably destroys detection.
-- data/wlasl/extract_log_firstpass.csv IS THE SOLE SURVIVING RECORD of per-clip
-  source width/height/fps/frames_in for WLASL100, and is committed to the repo
-  for that reason (one narrow .gitignore exception, walked down level by level --
-  a `!` rule cannot re-admit a file under an excluded directory). Spec §4
-  requires aspect ratio per clip; the cached .npy does not store frame
-  dimensions, so a cache-only extraction run writes width=0, height=0, fps=0 for
-  every row. Verified: all 1115 real-extraction rows in that log have width>0,
-  and all 1127 rows of the cache-only extract_log.csv have width=0. NEVER delete
-  it, and never "refresh" it by re-running extraction against a warm cache --
-  that silently replaces real resolutions with zeros and the information is gone,
-  because the videos are 55.3% of a corpus whose missing half is unrecoverable.
-  Re-deriving it requires deleting the cache and re-extracting all 1127 clips.
+- PER-CLIP SOURCE RESOLUTION LIVES IN TWO COMMITTED LOGS, not in the cache. The
+  cached .npy does not store frame dimensions, so a cache-only extraction run
+  writes width=0, height=0, fps=0 for every row (verified: all 1127 rows of
+  extract_log.csv). Spec §4 requires aspect ratio per clip, so both logs are
+  committed under one narrow .gitignore exception walked down level by level --
+  a `!` rule cannot re-admit a file under an excluded directory.
+  * data/wlasl/download_log_100.csv is the PRIMARY record: keyed by video_id,
+    all 2038 attempted clips, with width/height/fps/frames/bytes/source/host/url
+    and the download status that explains why 911 are missing.
+  * data/wlasl/extract_log_firstpass.csv is a redundant second record covering
+    the 1115 rows that came from a real extraction (width>0).
+  They agree EXACTLY on width, height and fps for all 1115 overlapping clips --
+  0 mismatches, checked. The only column that differs is frame count, for 132
+  clips, and that is correct rather than a discrepancy: the download log's
+  `frames` is the whole file, the extraction log's `frames_in` is the
+  frame_start..frame_end range. Do not add an aspect_ratio column to either;
+  it is width/height and storing it invites the two going out of step.
+  Never "refresh" either log by re-running extraction against a warm cache --
+  that replaces real resolutions with zeros. Re-deriving them needs the cache
+  deleted and all 1127 clips re-extracted, against a corpus whose missing half
+  is unrecoverable.
 - RELATED LATENT GITIGNORE BUG, not yet fixed: the `!**/manifest.csv` and
   `!**/signers.csv` whitelists are unreachable for anything under the data root,
   for the same parent-directory reason. Spec §4a requires manifest.csv and
