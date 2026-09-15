@@ -111,6 +111,44 @@ go-ahead. Do not chain milestones.
   signers.csv to be version-controlled. If capture.py writes them under
   data_root they will be silently untracked -- confirmed empirically, not
   assumed. Settle this when open decision 1 (manifest schema) is settled.
+- WLASL northtexas CLIPS CARRY BLACK SEPARATOR FRAMES INSIDE THE LABELLED RANGE.
+  43 of that source's 51 clips have a contiguous near-black run within
+  frame_start..frame_end, median 33.8% of the range (p90 51.9%, max 54.3%); 21
+  of them start within 15 frames of the range start, so the range is offset, not
+  merely wide -- one clip runs 9 pose frames, 51 black, 36 pose, meaning the
+  leading frames belong to the PREVIOUS dictionary entry. This is SOURCE-specific,
+  not format-specific: asl5200 is also trimmed compilation video, 81 clips, and
+  has ZERO black runs. The seek is exact (POS_FRAMES after seek == requested), so
+  this is WLASL's labelling, not our trimming. MediaPipe correctly finds no pose
+  on a black frame and normalise_frame correctly emits all-zero, so the pipeline
+  is behaving as designed.
+  THE LUMINANCE THRESHOLD MUST BE 10, NOT 20. A first pass at 20 wrongly flagged
+  13 asl5200 clips as "100% black": asl5200 footage is uniformly dim, with a
+  per-frame mean of 18-21 even where pose tracks at rate 1.0. northtexas
+  separators measure 2.3-7.3. At 10 the cut self-validates: 100% of frames called
+  dark also had no pose, and dark explains 99.8% of all pose-less frames in these
+  clips.
+  The pose-rate gate catches only 7 of the 43; 36 remain in the dataset (30 train,
+  6 val) with pose rates 0.53-1.0. TEST IS UNAFFECTED -- signers 121 and 9 are both
+  entirely inside train/val.
+- SIGNER 121 IS A SYSTEMATICALLY DEGRADED SIGNER and is exactly the 51 northtexas
+  clips. Pose-rate median 0.705 against 1.000 for the corpus; its 44 kept clips
+  average left-hand 0.165 / right 0.282 against 0.312 / 0.589 for the other 1076.
+  Not empty (max hand rate 0.616, none with zero hands throughout), so they are
+  not simply droppable -- but 4.5% of the corpus contributes roughly half the
+  usual hand signal, all of it in train/val. Related: pose_rate measures whether
+  there was an origin to centre on, NOT whether there was a hand to recognise. A
+  gate on max(left,right) < 0.1 would select 9 clips (8 of them signer 121, 1
+  signer 59), all train/val, 9 distinct glosses, starving nothing. The gate has
+  NOT been changed; this is recorded as an option, not a decision.
+- WLASL gloss_ids ARE NOT ALPHABETICAL. id 0 is "book", id 1 "drink", id 2
+  "computer". Any vocabulary built by sorting gloss names is a PERMUTATION of the
+  labels the dataset actually returns, because __getitem__ yields gloss_id.
+  Nothing errors and accuracy is unchanged -- the permutation is consistent -- so
+  the only visible symptom is that every class name on a confusion matrix, every
+  per-class F1 and every confused-pair listing names the wrong sign. Build the
+  vocabulary by indexing gloss_id, never by sorting. This already occurred once in
+  WlaslLandmarkDataset.glosses and was caught before the first training run.
 - Known limitations to restate wherever WLASL numbers appear: (a) signer_id
   reliability is unverified and the split is only as good as those labels, WLASL
   aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary
