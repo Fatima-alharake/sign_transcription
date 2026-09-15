@@ -187,6 +187,19 @@ def normalise_frame(
 ) -> tuple[np.ndarray, bool]:
     """Pack one frame into its feature vector.
 
+    DOWNSTREAM INVARIANTS -- do not break these without following the callers.
+    `wlasl_loader.rates_from_features` reconstructs pose presence from a cached
+    tensor alone, relying on exactly two properties of this function:
+
+    1. it returns an **all-zero** vector precisely when the frame has no usable
+       pose, and
+    2. any frame that *did* normalise has the shoulders at +/-0.5, so a
+       successfully normalised frame can never be all-zero.
+
+    If either stops holding, cached clips silently receive the wrong pose rate
+    and are filtered out of training with no error anywhere. That already
+    happened once, from a different cause.
+
     Returns the vector and whether the frame was normalisable at all. An
     un-normalisable frame (no pose, or shoulders too close together to give a
     trustworthy scale) yields an all-zero vector with both hand-visibility flags
@@ -277,24 +290,41 @@ def file_digest(path: str | Path, chunk_size: int = 1 << 20) -> str:
     return digest.hexdigest()
 
 
-def cache_key(path: str | Path, feature: FeatureConfig) -> str:
-    """Cache filename stem for a video under a given feature config.
+def cache_key(
+    path: str | Path,
+    feature: FeatureConfig,
+    segment: tuple[int, int | None] | None = None,
+) -> str:
+    """Cache filename stem for a video (or one segment of it).
 
     Keyed on the video's *content* (spec S4) and on the settings that change the
     output shape. Keying on the path alone would serve stale tensors after a
     re-record; keying on content alone would serve a use_z=True tensor to a
     use_z=False run, where the shape mismatch might not surface until training.
+
+    `segment` is the 1-based inclusive frame range, and it is **not optional for
+    a trimmed corpus**. WLASL cuts several signs from a single compilation
+    video: `book`, `school` and `paper` are three frame ranges of one YouTube
+    file. Those clips are byte-identical on disk, so a content-only key gives
+    them one cache entry -- the first extraction wins and every other gloss
+    silently loads it under its own label. 114 of 1127 WLASL100 clips share a
+    file with at least one other clip, so this is not a corner case.
     """
     fingerprint = json.dumps(
-        {"v": EXTRACTOR_VERSION, "use_z": feature.use_z},
+        {"v": EXTRACTOR_VERSION, "use_z": feature.use_z, "segment": segment},
         sort_keys=True,
     )
     suffix = hashlib.sha256(fingerprint.encode()).hexdigest()[:8]
     return f"{file_digest(path)}-{suffix}"
 
 
-def cache_path(path: str | Path, feature: FeatureConfig, cache_dir: Path) -> Path:
-    return Path(cache_dir) / f"{cache_key(path, feature)}.npy"
+def cache_path(
+    path: str | Path,
+    feature: FeatureConfig,
+    cache_dir: Path,
+    segment: tuple[int, int | None] | None = None,
+) -> Path:
+    return Path(cache_dir) / f"{cache_key(path, feature, segment)}.npy"
 
 
 def save_cached(clip: ClipLandmarks, destination: Path) -> Path:
@@ -379,8 +409,25 @@ class LandmarkExtractor:
             )
         return points[list(indices)]
 
-    def frames(self, video_path: str | Path) -> Iterator[FrameLandmarks]:
-        """Yield per-frame landmarks. Requires the context manager to be open."""
+    def frames(
+        self,
+        video_path: str | Path,
+        start: int = 1,
+        end: int | None = None,
+    ) -> Iterator[FrameLandmarks]:
+        """Yield per-frame landmarks over a 1-based, inclusive frame range.
+
+        `start`/`end` exist because a corpus clip is not always a whole file:
+        WLASL carries `frame_start`/`frame_end` marking one sign inside a long
+        compilation video, where the labelled sign is roughly 1% of the frames.
+        Trimming has to happen *here*, before MediaPipe runs -- trimming the
+        packed tensor afterwards would mean paying to extract thousands of
+        irrelevant frames, and trimming nothing at all would attach the label to
+        them.
+
+        Only the MediaPipe layer knows about ranges. Normalisation is unchanged
+        and still sees a plain list of frames.
+        """
         import cv2
 
         if self._landmarker is None:
@@ -392,8 +439,11 @@ class LandmarkExtractor:
             raise VideoReadError(f"could not open {video_path}")
         try:
             fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
-            index = 0
-            while True:
+            index = max(0, int(start) - 1)  # 1-based range -> 0-based seek
+            if index:
+                capture.set(cv2.CAP_PROP_POS_FRAMES, index)
+            last = None if end is None else int(end) - 1
+            while last is None or index <= last:
                 ok, bgr = capture.read()
                 if not ok:
                     break
@@ -438,14 +488,22 @@ def extract_video(
     video_path: str | Path,
     feature: FeatureConfig | None = None,
     data: DataConfig | None = None,
+    start: int = 1,
+    end: int | None = None,
 ) -> ClipLandmarks:
-    """Run MediaPipe over a video and return normalised landmarks."""
+    """Run MediaPipe over a video (or a 1-based frame range) and normalise it.
+
+    A fresh `LandmarkExtractor` per call is not incidental: HolisticLandmarker
+    retains state across detections, and handing it a different frame size than
+    the previous call crashes the graph. WLASL alone spans 15 distinct
+    resolutions, so one long-lived extractor would fail partway through a corpus.
+    """
     feature = feature or FeatureConfig()
     data = data or DataConfig()
 
     fps, width, height = probe_video(video_path)
     with LandmarkExtractor(data) as extractor:
-        frames = list(extractor.frames(video_path))
+        frames = list(extractor.frames(video_path, start=start, end=end))
     if not frames:
         raise VideoReadError(f"{video_path} decoded zero frames")
 

@@ -477,3 +477,33 @@ def test_save_cached_is_atomic_and_leaves_no_temp_file(tmp_path) -> None:
     assert destination.exists()
     assert list(tmp_path.rglob("*.tmp")) == []
     assert np.load(destination) == pytest.approx(clip.features)
+
+
+# --- Segment-aware cache keys ----------------------------------------------
+
+
+def test_segments_of_one_file_get_distinct_cache_keys(tmp_path) -> None:
+    """WLASL cuts several signs from one compilation video, so those clips are
+    byte-identical on disk. A content-only key gives them a single cache entry:
+    the first extraction wins and every other gloss silently loads it under its
+    own label. 114 of 1127 WLASL100 clips share a file with another clip.
+    """
+    video = _write(tmp_path / "compilation.mp4", b"one long video")
+    feature = FeatureConfig()
+    book = cache_key(video, feature, segment=(2150, 2249))
+    school = cache_key(video, feature, segment=(1068, 1179))
+    whole = cache_key(video, feature, segment=None)
+    assert len({book, school, whole}) == 3
+
+
+def test_same_segment_still_hits_the_cache(tmp_path) -> None:
+    video = _write(tmp_path / "clip.mp4", b"bytes")
+    feature = FeatureConfig()
+    assert cache_key(video, feature, (1, 50)) == cache_key(video, feature, (1, 50))
+
+
+def test_segment_reaches_the_cache_path(tmp_path) -> None:
+    video = _write(tmp_path / "clip.mp4", b"bytes")
+    a = cache_path(video, FeatureConfig(), tmp_path, segment=(1, 10))
+    b = cache_path(video, FeatureConfig(), tmp_path, segment=(11, 20))
+    assert a != b and a.suffix == ".npy"
