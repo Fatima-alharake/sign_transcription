@@ -31,11 +31,31 @@ go-ahead. Do not chain milestones.
   signers or the Ember dictionary export the user supplies. Do not scrape
   sign.ember.mn.
 - Never report accuracy from synthetic or placeholder data as a result.
-- AUTSL is Turkish Sign Language — usable for backbone pretraining only, never as
-  vocabulary. Label any AUTSL number as Turkish Sign Language everywhere it appears.
-- If an AUTSL mirror is used instead of the official source, VERIFY it preserves the
-  official signer-independent split and the signer_id column before training, and
-  record provenance in the README.
+- WLASL is American Sign Language — usable for backbone pretraining only, never as
+  MSL vocabulary. Label every WLASL number as ASL everywhere it appears: README,
+  figures, slides, talks, commit messages.
+- WLASL is licensed C-UDA (Computational Use of Data Agreement): academic and
+  computational use only, no commercial use.
+- WLASL's shipped split is NOT signer-independent: 2877/2878 test instances have a
+  signer who also appears in train. We build our own signer-independent split
+  (whole signers held out, greedily smallest-first, no gloss losing all training
+  data, seeded, committed as CSV). ALWAYS report two numbers, both labelled ASL:
+  the signer-independent one as the headline, and the official-split one only
+  alongside it, marked signer-dependent and optimistic. The official number must
+  never appear alone -- not in the README, not in a plot title, not in a commit
+  message.
+- Known limitations to restate wherever WLASL numbers appear: (a) signer_id
+  reliability is unverified and the split is only as good as those labels, WLASL
+  aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary
+  video, not natural signing, so the backbone is tuned to citation form.
+- Proxy corpus choice was REVERSED, for access not merit. AUTSL (Turkish Sign
+  Language) was chosen first because it ships an official signer-independent split
+  — the property spec §5 says decides whether a number means anything — and carries
+  ~170 clips per class against WLASL's ~10. AUTSL proved unobtainable: encrypted
+  files whose decryption keys are issued through a CodaLab instance read-only since
+  January 2023. WLASL is a fallback, not an upgrade. If WLASL's shipped split is not
+  signer-independent, say so plainly wherever a number appears; never let a
+  signer-dependent number stand unqualified.
 
 ## Environment — already set up, do not redo
 uv sync done. torch 2.13.0+cu130, CUDA available, RTX 3060. mediapipe 1.0.0,
@@ -47,5 +67,6 @@ opencv 5.0.0, numpy 2.4.6. Model bundle at assets/holistic_landmarker.task
    §5 line ~149 defines a different 6-column set (incl. split). Aspect ratio per
    clip must land in whichever wins. msl/data/manifest.py cannot be written until
    this is settled.
-2. AUTSL access route and provenance.
+2. WLASL: whether to use a shipped split or construct a signer-independent one,
+   and which subset size to start from.
 3. Disk budget / whether data_root points at an external drive.
