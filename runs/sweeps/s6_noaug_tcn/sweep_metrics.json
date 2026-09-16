@@ -1,0 +1,96 @@
+{
+  "label": "tcn, NO augmentation (spec S6 terms)",
+  "language": "American Sign Language (WLASL100)",
+  "corpus_completeness": "55.3% (1127 of 2038 clips)",
+  "arch": "tcn",
+  "use_z": false,
+  "augmentation": null,
+  "protocol": {
+    "early_stopping": false,
+    "max_steps": 2400,
+    "patience": null,
+    "checkpoint": "final",
+    "comparable_to": "fixed-budget 2400-step runs only"
+  },
+  "seeds": [
+    1234,
+    2345,
+    3456
+  ],
+  "budget_fit": {
+    "1234": {
+      "final_loss_mean_last_100": 0.8525,
+      "loss_at_half_budget": 0.9384,
+      "late_slope_per_1k_steps": -0.0181
+    },
+    "2345": {
+      "final_loss_mean_last_100": 0.8528,
+      "loss_at_half_budget": 0.9392,
+      "late_slope_per_1k_steps": -0.0143
+    },
+    "3456": {
+      "final_loss_mean_last_100": 0.8551,
+      "loss_at_half_budget": 0.9345,
+      "late_slope_per_1k_steps": -0.016
+    }
+  },
+  "per_seed": [
+    {
+      "seed": 1234,
+      "test_top1": 0.5828,
+      "test_top5": 0.7959,
+      "test_macro_f1": 0.5355,
+      "steps_run": 2400
+    },
+    {
+      "seed": 2345,
+      "test_top1": 0.571,
+      "test_top5": 0.7899,
+      "test_macro_f1": 0.5352,
+      "steps_run": 2400
+    },
+    {
+      "seed": 3456,
+      "test_top1": 0.5799,
+      "test_top5": 0.7811,
+      "test_macro_f1": 0.541,
+      "steps_run": 2400
+    }
+  ],
+  "aggregate": {
+    "test_top1": {
+      "mean": 0.5779,
+      "sd": 0.0061,
+      "min": 0.571,
+      "max": 0.5828,
+      "values": [
+        0.5828,
+        0.571,
+        0.5799
+      ]
+    },
+    "test_top5": {
+      "mean": 0.789,
+      "sd": 0.0074,
+      "min": 0.7811,
+      "max": 0.7959,
+      "values": [
+        0.7959,
+        0.7899,
+        0.7811
+      ]
+    },
+    "test_macro_f1": {
+      "mean": 0.5372,
+      "sd": 0.0033,
+      "min": 0.5352,
+      "max": 0.541,
+      "values": [
+        0.5355,
+        0.5352,
+        0.541
+      ]
+    }
+  },
+  "note": "val accuracy deliberately absent: signer-dependent, stopping criterion only"
+}

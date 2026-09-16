@@ -456,6 +456,36 @@ here can reach p < 0.05 by construction:
   treat that as suggestive only. It is kept as a genuine data correction that
   does not move the number.
 
+#### Spec §6 tested on its own terms
+
+§6 says the TCN "is the one to beat — its locality prior makes it strong in
+exactly the small-data regime this project starts in." That is a claim about an
+*unaugmented* small-data regime, so it was tested there: no augmentation,
+`use_z: false`, fixed 2400-step budget, 3 seeds.
+
+| architecture, no augmentation | top-1 | top-5 | macro F1 | params |
+|---|---|---|---|---|
+| **TCN** | **0.5779 +/- 0.0061** | 0.7890 +/- 0.0074 | 0.5372 +/- 0.0033 | 695,268 |
+| transformer | 0.4970 +/- 0.0178 | 0.7663 +/- 0.0030 | 0.4645 +/- 0.0152 | 574,948 |
+| BiLSTM | 0.3481 +/- 0.0252 | 0.5927 +/- 0.0197 | 0.3114 +/- 0.0296 | 434,148 |
+
+**The claim holds, and so does the reasoning behind it.** All three are pairwise
+disjoint on top-1. The TCN's margin over the transformer *widens* from +5.72pp
+with augmentation to **+8.09pp** without it, which is what "the locality prior
+substitutes for data" predicts — the prior matters more when nothing else is
+supplying variety. The TCN also has the tightest seed spread of the three
+(sd 0.0061 against 0.0178 and 0.0252). BiLSTM is not competitive: 14.9pp below
+the transformer and 23.0pp below the TCN.
+
+**Augmentation does not separate once z is dropped.** The +3.94pp augmentation
+result above was measured with z present. With z dropped — now the default —
+augmentation's advantage overlaps for both architectures: transformer
+0.4970 -> 0.5345 (+3.75pp, overlapping ranges) and TCN 0.5779 -> 0.5917
+(+1.38pp, overlapping ranges). Both means are higher, so keeping augmentation is
+reasonable, but at n=3 that preference is not evidence-based and should not be
+described as a measured gain in the current configuration. Plausibly some of the
+original augmentation benefit was compensating for z noise.
+
 Budget fit is recorded per run in `sweep_metrics.json` so a delta can be checked
 for the failure where the budget suits one arm and not the other. At 2400 steps
 every variant lands at a final training loss of 0.86–0.88 with a late slope

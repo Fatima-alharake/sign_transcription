@@ -30,6 +30,31 @@ to these -- see the hard-won fact below.
 | TCN + aug, z scaled 0.6953 | 0.5000 +/- 0.0165 | 0.7367 +/- 0.0078 | 0.4602 +/- 0.0126 |
 | **TCN + aug, z dropped (REFERENCE)** | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
 
+SPEC §6 TESTED ON ITS OWN TERMS (no augmentation, use_z false, fixed budget,
+3 seeds). "The TCN is the one to beat below a few thousand clips" HOLDS:
+
+| arch, NO augmentation | top-1 | range | top-5 | macro F1 | sd |
+|---|---|---|---|---|---|
+| TCN | **0.5779** | .5710-.5828 | 0.7890 | 0.5372 | 0.0061 |
+| transformer | 0.4970 | .4793-.5148 | 0.7663 | 0.4645 | 0.0178 |
+| BiLSTM | 0.3481 | .3195-.3669 | 0.5927 | 0.3114 | 0.0252 |
+
+All three pairwise disjoint on top-1. The §6 MECHANISM is supported too, on the
+criterion set before the run: the TCN's margin over the transformer WIDENS from
++5.72pp with augmentation to +8.09pp without it (+2.37pp), which is what "the
+locality prior substitutes for data" predicts, and the TCN also has the tightest
+seed spread of the three. BiLSTM is not in the race -- 14.9pp below the
+transformer, 23.0pp below the TCN.
+
+AUGMENTATION NO LONGER SEPARATES ONCE z IS DROPPED. This qualifies the earlier
+finding, which was measured WITH z present (+3.94pp, disjoint ranges). With z
+dropped -- now the default -- augmentation overlaps for both architectures:
+transformer 0.4970 -> 0.5345 (+3.75pp, ranges overlap) and TCN 0.5779 -> 0.5917
+(+1.38pp, ranges overlap). Keep augmentation if you like -- both means are
+higher -- but do not claim it separates in the current default configuration,
+and note that preferring the augmented pipeline is not an evidence-based choice
+at n=3. Plausibly augmentation was partly compensating for z noise.
+
 Separations, as non-overlapping ranges and never as significance (at 3 v 3 the
 smallest achievable two-sided rank p is 0.1): dropping z separates on both
 architectures by a wide margin; augmentation separates on top-1 only; TCN beats
@@ -82,6 +107,12 @@ A PREDICTION RECORD, kept because the misses are informative:
 * z ablation: no prediction offered, and it was the largest effect in the
   project. The biggest win came from a channel the spec had flagged as suspect
   and nobody had tested.
+* spec §6 comparison: predicted transformer 0.490 (actual 0.4970), TCN 0.560
+  (actual 0.5779), BiLSTM 0.480 (actual 0.3481). The first two were close and
+  the separation call was right; BiLSTM was wrong by 13.2pp -- it was predicted
+  level with the transformer and came 14.9pp below it. Lesson: an architecture
+  with no prior evidence on this corpus was given a prior by analogy to the
+  other two, which is not evidence.
 * scaled z: predicted 0.582 top-1, actual 0.5000 -- off by 8.2pp, and BOTH
   directional calls were wrong (predicted separation from raw z and none
   appeared; predicted no separation from no-z and it separated decisively).
