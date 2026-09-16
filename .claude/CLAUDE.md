@@ -99,27 +99,43 @@ comparison the spec actually describes and has not been run; a hand-rate gate
 in place of or alongside min_pose_rate (see the signer-121 fact); and BiLSTM,
 the third §6 baseline, which has never been run at all.
 
-A PREDICTION RECORD, kept because the misses are informative:
-* separator trim: predicted +0.8pp, actual -2.86pp under a confounded protocol.
-  Modelled the data change, missed the protocol.
-* TCN: predicted +1.5pp with overlapping ranges, actual +1.48pp with
-  NON-overlapping ranges. Magnitude right, conclusion wrong.
-* z ablation: no prediction offered, and it was the largest effect in the
-  project. The biggest win came from a channel the spec had flagged as suspect
-  and nobody had tested.
-* spec §6 comparison: predicted transformer 0.490 (actual 0.4970), TCN 0.560
-  (actual 0.5779), BiLSTM 0.480 (actual 0.3481). The first two were close and
-  the separation call was right; BiLSTM was wrong by 13.2pp -- it was predicted
-  level with the transformer and came 14.9pp below it. Lesson: an architecture
-  with no prior evidence on this corpus was given a prior by analogy to the
-  other two, which is not evidence.
-* scaled z: predicted 0.582 top-1, actual 0.5000 -- off by 8.2pp, and BOTH
-  directional calls were wrong (predicted separation from raw z and none
-  appeared; predicted no separation from no-z and it separated decisively).
-  The miss has the same shape as the spec error it was testing: a plausible
-  mechanism (33% of features at 1.5x magnitude) was promoted to a cause without
-  measurement, and the arithmetic built on it inherited the error. A correlation
-  that is real is not therefore the mechanism.
+PREDICTION LOG, with root cause. Kept because the misses cluster.
+
+| # | prediction | actual | root cause |
+|---|---|---|---|
+| 1 | separator trim +0.8pp top-1 | -2.86pp | **protocol** |
+| 2 | TCN +1.5pp, ranges overlapping | +1.48pp, ranges DISJOINT | **configuration-inheritance** |
+| 3 | scaled z 0.582 top-1 | 0.5000, both directional calls inverted | **correlation-as-mechanism** |
+| 4 | BiLSTM 0.480 top-1 | 0.3481 (-13.2pp) | **analogy-without-evidence** |
+| 5 | augmentation separates on top-1 | does not separate once z is dropped | **configuration-inheritance** |
+| - | z ablation: no prediction offered | largest effect in the project | - |
+
+What each root means, and how to not repeat it:
+
+* **protocol** (#1): the change under test also altered the measurement
+  apparatus. The trim edited val, which was the early-stopping criterion, so the
+  stopping step moved and the data effect was never measured. Before predicting
+  a delta, ask what the change does to the measurement, not only to the data.
+* **configuration-inheritance** (#2, #5): a result measured under one
+  configuration was carried forward after the configuration changed. The +3.94pp
+  augmentation win was measured WITH z; it does not survive dropping z. Miss #2
+  then reasoned *from* that win ("augmentation already spent the small-data
+  gain, so the TCN has no headroom") and inherited its error. Every recorded
+  number needs the configuration it was measured under attached, and a number
+  must be re-measured, not re-quoted, once that configuration changes.
+* **correlation-as-mechanism** (#3): z really is 33.1% of the vector at 1.5x the
+  magnitude of x and y, and that really did look like the reason it hurt. It was
+  not. A correlation that is real is not therefore the mechanism; test the
+  mechanism before recording it, and never predict from an untested one.
+* **analogy-without-evidence** (#4): BiLSTM had no prior result on this corpus
+  and was given a prior by analogy to the transformer and TCN. Analogy is not
+  evidence. An architecture with no measurement here gets a wide interval, not a
+  neighbour's mean.
+
+THREE OF THE FIVE MISSES SHARE ONE ROOT: #1, #2 and #5 are all the measurement
+conditions rather than the thing measured. That is the failure mode to watch on
+this project, and it is why the fixed-budget protocol is now enforced by
+sweep.py refusing to run off-protocol rather than by remembering a CLI flag.
 
 RUN ARTIFACTS DO NOT SURVIVE A FRESH CLONE. `runs/` and `checkpoints/` are both
 gitignored, and zero files under them are tracked, so sweep_metrics.json, the
@@ -298,6 +314,16 @@ commit its sweep_metrics.json the way the WLASL logs were committed.
   confound was stated in the commit message for the trim and still left out of
   the prediction. Before predicting a delta, ask what the change does to the
   measurement apparatus, not only to the data.
+- A BiLSTM SWEEP ON CUDA REPORTS EXIT 127 DESPITE SUCCEEDING. Verify the
+  SWEEP_OK marker file in the report directory, never the exit code. Scoped by
+  bisection: transformer and TCN on CUDA exit 0, BiLSTM on CPU exits 0, BiLSTM on
+  CUDA exits 127 with complete and valid metrics on disk. A bare cuDNN LSTM
+  forward pass exits 0, so it is not simply the RNN, and an os._exit(0) at the
+  end of main() is REACHED and prints while the shell still sees 127 -- the
+  status is overridden below Python, so no in-process fix exists. ROOT CAUSE
+  UNKNOWN and deliberately left unexplained rather than guessed at. This already
+  made one three-architecture sweep look like a failure when all nine runs had
+  succeeded.
 - Known limitations to restate wherever WLASL numbers appear: (a) signer_id
   reliability is unverified and the split is only as good as those labels, WLASL
   aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary

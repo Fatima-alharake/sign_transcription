@@ -26,7 +26,16 @@ train:
   batch_size: 32       # 666 training clips -> ~21 steps per epoch
   lr: 0.001
   weight_decay: 0.01
-  max_steps: 4000      # ~192 epochs; early stopping is expected to fire first
+  max_steps: 2400      # THE reference protocol budget, chosen from the curves:
+                       # smoothed val reaches 98% of its plateau by step
+                       # 1600-1700 and peaks at 1600/1750, so 2400 is 1.37x the
+                       # latest peak. Past it, training loss keeps falling while
+                       # val is flat, which buys overfitting. The cosine
+                       # completes here, so every run ends annealed.
+  early_stopping: false  # Variant comparisons never early-stop: on a 116-clip
+                       # val set the stopping step, not the change under test,
+                       # drives the score. sweep.py REFUSES to run a comparison
+                       # on any other protocol.
   warmup_steps: 200
   label_smoothing: 0.1
   grad_clip: 1.0
