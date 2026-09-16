@@ -176,9 +176,13 @@ one root — worth more than the hit rate:
 One more worth stating: **no prediction was offered for the z ablation**, which
 turned out to be the largest effect in the project.
 
-## Data licensing — read this before reusing anything
+## Licensing — code and data are governed separately
 
-WLASL is licensed **C-UDA** (Computational Use of Data Agreement v1.0):
+**Code: [MIT](LICENSE).** The MIT licence covers the code in this repository
+only. It does not relicense the dataset, and it cannot.
+
+**Data: C-UDA, unchanged.** WLASL is licensed **C-UDA** (Computational Use of
+Data Agreement v1.0):
 *"You will use the Data solely for Computational Use."* Academic and
 computational use only, no commercial use.
 
@@ -188,6 +192,10 @@ is **Data** and stays out of this repository. The split CSVs and the download
 and extraction logs are published; the landmark cache is not. Each call, with
 the quoted clauses and the one judgement call flagged as such:
 **[DATA_LICENCE.md](DATA_LICENCE.md)**.
+
+So: take the code under MIT and do as you like with it. Anything you do with
+the WLASL-derived CSVs and logs is still bound by the C-UDA, MIT
+notwithstanding.
 
 ## Status
 

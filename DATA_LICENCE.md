@@ -1,5 +1,10 @@
 # Data licensing — what is in this repository and what is not
 
+> **The code in this repository is MIT licensed ([LICENSE](LICENSE)). This file
+> is about the DATA, which is not MIT and cannot be made MIT by us.** The two
+> are governed separately: MIT covers what we wrote, the C-UDA covers what we
+> received and anything derived from it that is still Data.
+
 This project pretrains a backbone on **WLASL** (Word-Level American Sign
 Language), which is distributed under the **Computational Use of Data Agreement
 v1.0 (C-UDA)**. Canonical text: <https://cdla.dev/computational-use-of-data-agreement-v1-0/>
