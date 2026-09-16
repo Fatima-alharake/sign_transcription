@@ -111,10 +111,27 @@ second part turns out to matter much. **Discard z; do not try to rescue it by
 rescaling.** The scaling path is implemented (`FeatureConfig.z_scale`,
 `landmarks.scale_z`) and measured, so it does not need re-testing.
 
-The residual possibility this does not rule out: MediaPipe's z may be usable for
-*pose* while being noise for the 42 hand landmarks, which are inferred from a 2D
-image with weak depth priors. A per-block z ablation would test that. It has not
-been run, and nothing here should be read as evidence about it either way.
+**The pose-versus-hands hypothesis was then tested, and REFUTED.** The idea was
+that z might be usable for the body while being noise for the 42 hand
+landmarks, which MediaPipe infers from a 2D image with weak depth priors. Every
+z variant is disjoint *below* z-dropped:
+
+| z kept for | channels | top-1 | cost vs dropped | per channel |
+|---|---|---|---|---|
+| nothing | 0 | 0.5917 +/- 0.0263 | — | — |
+| pose only | 15 | 0.5434 +/- 0.0061 | −4.83pp | 0.322pp |
+| hands only | 42 | 0.5138 +/- 0.0146 | −7.79pp | 0.185pp |
+| everything | 91 | 0.4783 +/- 0.0085 | −11.34pp | 0.125pp |
+
+No block is beneficial. Worse for the hypothesis, **pose z is the more harmful
+per channel** — the only reason pose-z-only outscores hands-z-only is that it
+adds 15 channels instead of 42, not that body depth is better. The marginal
+harm also falls as more z is added (0.322 → 0.185 → 0.125 pp per channel), so
+the damage is not one fixed cost per noisy channel; admitting any z at all
+carries most of it.
+
+**Conclusion: discard z entirely. Every avenue for keeping it has been measured
+and closed** — raw, rescaled, and per block.
 
 Storage is a separate decision from consumption. **The landmark cache always
 stores z** (`extract.CACHE_USE_Z`) and `use_z` is applied when loading: a cached

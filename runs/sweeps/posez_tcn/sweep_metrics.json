@@ -1,0 +1,106 @@
+{
+  "label": "TCN + aug, pose-z only",
+  "language": "American Sign Language (WLASL100)",
+  "corpus_completeness": "55.3% (1127 of 2038 clips)",
+  "arch": "tcn",
+  "use_z": true,
+  "augmentation": {
+    "enabled": true,
+    "speed_min": 0.8,
+    "speed_max": 1.2,
+    "frame_dropout": 0.05,
+    "rotation_degrees": 10.0,
+    "scale_min": 0.9,
+    "scale_max": 1.1,
+    "joint_noise_std": 0.01,
+    "mirror": false
+  },
+  "protocol": {
+    "early_stopping": false,
+    "max_steps": 2400,
+    "patience": null,
+    "checkpoint": "final",
+    "comparable_to": "fixed-budget 2400-step runs only"
+  },
+  "seeds": [
+    1234,
+    2345,
+    3456
+  ],
+  "budget_fit": {
+    "1234": {
+      "final_loss_mean_last_100": 0.864,
+      "loss_at_half_budget": 0.9709,
+      "late_slope_per_1k_steps": -0.027
+    },
+    "2345": {
+      "final_loss_mean_last_100": 0.8653,
+      "loss_at_half_budget": 0.9731,
+      "late_slope_per_1k_steps": -0.0215
+    },
+    "3456": {
+      "final_loss_mean_last_100": 0.8627,
+      "loss_at_half_budget": 0.9631,
+      "late_slope_per_1k_steps": -0.0213
+    }
+  },
+  "per_seed": [
+    {
+      "seed": 1234,
+      "test_top1": 0.5503,
+      "test_top5": 0.7692,
+      "test_macro_f1": 0.5126,
+      "steps_run": 2400
+    },
+    {
+      "seed": 2345,
+      "test_top1": 0.5414,
+      "test_top5": 0.7574,
+      "test_macro_f1": 0.5026,
+      "steps_run": 2400
+    },
+    {
+      "seed": 3456,
+      "test_top1": 0.5385,
+      "test_top5": 0.7929,
+      "test_macro_f1": 0.5049,
+      "steps_run": 2400
+    }
+  ],
+  "aggregate": {
+    "test_top1": {
+      "mean": 0.5434,
+      "sd": 0.0061,
+      "min": 0.5385,
+      "max": 0.5503,
+      "values": [
+        0.5503,
+        0.5414,
+        0.5385
+      ]
+    },
+    "test_top5": {
+      "mean": 0.7732,
+      "sd": 0.0181,
+      "min": 0.7574,
+      "max": 0.7929,
+      "values": [
+        0.7692,
+        0.7574,
+        0.7929
+      ]
+    },
+    "test_macro_f1": {
+      "mean": 0.5067,
+      "sd": 0.0052,
+      "min": 0.5026,
+      "max": 0.5126,
+      "values": [
+        0.5126,
+        0.5026,
+        0.5049
+      ]
+    }
+  },
+  "note": "val accuracy deliberately absent: signer-dependent, stopping criterion only"
+}

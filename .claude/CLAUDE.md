@@ -28,6 +28,8 @@ to these -- see the hard-won fact below.
 | TCN + augmentation | 0.4783 +/- 0.0085 | 0.7219 +/- 0.0107 | 0.4442 +/- 0.0062 |
 | transformer + aug, z dropped | 0.5345 +/- 0.0222 | 0.7998 +/- 0.0178 | 0.4923 +/- 0.0273 |
 | TCN + aug, z scaled 0.6953 | 0.5000 +/- 0.0165 | 0.7367 +/- 0.0078 | 0.4602 +/- 0.0126 |
+| TCN + aug, hands-z only | 0.5138 +/- 0.0146 | 0.7515 +/- 0.0180 | 0.4807 +/- 0.0199 |
+| TCN + aug, pose-z only | 0.5434 +/- 0.0061 | 0.7732 +/- 0.0181 | 0.5067 +/- 0.0052 |
 | **TCN + aug, z dropped (REFERENCE)** | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
 
 SPEC §6 TESTED ON ITS OWN TERMS (no augmentation, use_z false, fixed budget,
@@ -73,9 +75,17 @@ and scaled-z does not even separate from raw z: 0.5000 +/- 0.0165 against
 0.4783 +/- 0.0085, overlapping ranges. Dropping z beats both with disjoint
 ranges. MOST OF THE HARM IS z's CONTENT, NOT ITS LOUDNESS. Do not try to rescue
 z by rescaling -- that path is implemented (FeatureConfig.z_scale,
-landmarks.scale_z), measured, and closed. NOT ruled out: z may be usable for
-pose while being noise for the 42 hand landmarks, which are inferred from a 2D
-image. A per-block z ablation would test that and has not been run.
+landmarks.scale_z), measured, and closed.
+
+THE POSE-VS-HANDS HYPOTHESIS IS ALSO REFUTED. Per-block ablation, TCN + aug,
+same protocol: pose-z only 0.5434 +/- 0.0061, hands-z only 0.5138 +/- 0.0146,
+all z 0.4783 +/- 0.0085, all three DISJOINT BELOW z-dropped 0.5917 +/- 0.0263.
+No block helps. And pose z is the MORE harmful per channel (0.322pp against
+0.185pp for hands) -- pose-z-only only outscores hands-z-only because it adds
+15 channels rather than 42, not because body depth is better. Marginal harm
+falls as z is added (0.322 -> 0.185 -> 0.125 pp per channel), so admitting any
+z at all carries most of the cost. EVERY AVENUE FOR KEEPING z IS NOW MEASURED
+AND CLOSED: raw, rescaled, per block. Discard it.
 
 The ablation costs nothing: landmarks.drop_z slices z out of the use_z=True
 cache and is exactly equivalent to extracting with use_z=False, because x and y
@@ -108,6 +118,7 @@ PREDICTION LOG, with root cause. Kept because the misses cluster.
 | 3 | scaled z 0.582 top-1 | 0.5000, both directional calls inverted | **correlation-as-mechanism** |
 | 4 | BiLSTM 0.480 top-1 | 0.3481 (-13.2pp) | **analogy-without-evidence** |
 | 5 | augmentation separates on top-1 | does not separate once z is dropped | **configuration-inheritance** |
+| 6 | pose-z ~0.590 overlapping, hands-z ~0.530 below | pose-z 0.5434 DISJOINT below, hands-z 0.5138 below | **mechanism-from-plausibility** |
 | - | z ablation: no prediction offered | largest effect in the project | - |
 
 What each root means, and how to not repeat it:
@@ -127,13 +138,22 @@ What each root means, and how to not repeat it:
   magnitude of x and y, and that really did look like the reason it hurt. It was
   not. A correlation that is real is not therefore the mechanism; test the
   mechanism before recording it, and never predict from an untested one.
+* **mechanism-from-plausibility** (#6, same family as #3): the pose-versus-hands
+  split was reasoned from how MediaPipe infers depth, which sounds right and was
+  never measured. Per channel, pose z turned out to be the MORE harmful of the
+  two -- the opposite of the prediction. The hands-z half was roughly right
+  (0.530 predicted, 0.5138 actual) and the pose-z half was wrong, which is the
+  signature of a story that fits some of the data by luck. To its credit the
+  prediction was filed as a hypothesis with "both bad" named as the likelier
+  outcome, and "both bad" is what happened.
 * **analogy-without-evidence** (#4): BiLSTM had no prior result on this corpus
   and was given a prior by analogy to the transformer and TCN. Analogy is not
   evidence. An architecture with no measurement here gets a wide interval, not a
   neighbour's mean.
 
-THREE OF THE FIVE MISSES SHARE ONE ROOT: #1, #2 and #5 are all the measurement
-conditions rather than the thing measured. That is the failure mode to watch on
+THREE OF THE SIX MISSES SHARE ONE ROOT: #1, #2 and #5 are all the measurement
+conditions rather than the thing measured. A second pair, #3 and #6, shares
+another: a mechanism asserted from plausibility and then predicted from. That is the failure mode to watch on
 this project, and it is why the fixed-budget protocol is now enforced by
 sweep.py refusing to run off-protocol rather than by remembering a CLI flag.
 

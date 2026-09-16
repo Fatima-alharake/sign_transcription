@@ -1,28 +1,217 @@
 # MSL — Mongolian Sign Language → Mongolian text
 
-Two separable stages:
+Landmark-based sign language recognition, built toward Mongolian Sign Language
+(MSL) in two separable stages:
 
 - **Stage A — Recognition:** video → gloss sequence (uppercase Mongolian labels).
 - **Stage B — Translation:** gloss sequence → grammatical Mongolian, with case
   suffixes and vowel harmony.
 
-See [msl-recognition-spec.md](msl-recognition-spec.md) for the full spec.
+**There is no MSL data yet, and no MSL result in this repository.** No public MSL
+corpus exists. The work so far builds the pipeline and pretrains a backbone on a
+proxy corpus, so that Mongolian data — once collected — fine-tunes from trained
+weights rather than from scratch. Full spec:
+[msl-recognition-spec.md](msl-recognition-spec.md).
 
-## Status: Milestone 1 — extraction and overlay written, not yet verified on video
+## Headline result
 
-What exists: the Milestone 0 skeleton (dataset in `--synthetic` mode, three
-sequence backbones, training loop, checkpointing, ONNX export), plus
-`extract.py` — a pure-NumPy normalisation core with a lazily imported MediaPipe
-layer — and `overlay.py`, the renderer for verifying extraction by eye. The
-overlay has not yet been run on real footage, so extraction remains unverified
-and the face subset stays marked PROVISIONAL.
+**Isolated sign recognition on WLASL100: 59.17% ± 2.63 top-1, 79.88% ± 1.35
+top-5, macro F1 0.546 ± 0.035.**
 
-Not yet started: the manifest (`manifest.py`), `capture.py`, and the real-data
-dataset path.
+Every one of those numbers needs its caveats attached, so here they are in the
+same breath:
 
-Nothing here produces a meaningful accuracy number — synthetic labels are random
-by construction, and per spec §3a only a proxy corpus (WLASL, Milestone 4)
-yields numbers worth reporting.
+- **This is American Sign Language, not Mongolian.** WLASL is ASL. It is used
+  for backbone pretraining only; the vocabulary does not transfer.
+- **The corpus is 55.3% complete** — 1,127 of 2,038 clips. 911 are unrecoverable
+  from dead hosts and private videos. Every number is computed on the half that
+  survived.
+- **Signer-independent test split, built by us.** WLASL's shipped split is not
+  signer-independent (2,877 of 2,878 test instances share a signer with train).
+  338 test clips, 100 classes, chance top-1 1.0%. Test signers appear nowhere in
+  training.
+- **3 seeds, reported as mean ± sample sd with ranges.** At n=3 an sd is a rough
+  spread indicator, not a confidence interval. Differences are described as
+  overlapping or disjoint ranges, never as statistical significance — with 3 v 3
+  seeds the smallest achievable two-sided rank p is 0.1, so nothing here could
+  reach p < 0.05 by construction.
+- **Untuned.** No learning-rate sweep, no architecture search. Spec defaults with
+  a fixed step budget.
+- **Citation-form dictionary video, not natural signing**, and `signer_id`
+  reliability is unverified across the 8 dictionary sites WLASL aggregates — so
+  the split is only as good as those labels.
+
+Best configuration: TCN backbone, spec §5 augmentation, MediaPipe's z channel
+discarded. Full table and every variant measured: [Results](#results-backbone-pretraining-on-wlasl100-asl-not-msl).
+
+## What this project is, in one minute
+
+Landmark-based rather than raw-pixel: MediaPipe Holistic extracts pose, hand and
+face keypoints, and the model trains on keypoint sequences. Raw-video 3D CNNs
+need far more data than a from-scratch sign corpus will ever have.
+
+- `msl/data/` — extraction with a pure-NumPy normalisation core, the WLASL
+  loader, augmentation, the signer-independent split builder.
+- `msl/models/` — transformer, BiLSTM and TCN backbones behind one
+  `(B, T, F) -> (B, d_model)` contract, with the classifier head kept separable
+  so a backbone can be reloaded under a different vocabulary.
+- `msl/train/` — step-based training loop, evaluation (top-1/5, per-class F1,
+  confusion matrix), and `sweep.py`, which runs a variant across seeds and
+  refuses to run off the reference protocol.
+- 210 tests. Runs on CPU or CUDA; ONNX export works.
+
+## Methodology decisions worth your attention
+
+These are the four things a reader should look at before the numbers, because
+each one changes what the numbers mean.
+
+### 1. The signer-independent split was rebuilt, because the shipped one is not
+
+WLASL ships a split in which **2,877 of 2,878 test instances have a signer who
+also appears in training**. Accuracy measured on it answers "can the model
+re-recognise people it has seen", which is not the question. We build our own:
+whole signers held out, greedily smallest-first, seeded, committed as CSV.
+
+The constraint is **two-sided** — every gloss keeps both training clips *and* at
+least one held-out test clip. Enforcing only the training side is a bug that
+actually happened here: it left 12 of 100 glosses with no test clip while still
+reporting "100 classes". Achieved: 30.0% holdout, 51 held-out signers, 100/100
+glosses on both sides. Details:
+[the split, as built](#the-signer-independent-split-as-built).
+
+**Val is signer-dependent by design and is never reported.** It is a clip-level
+split inside the training signers, used only as a stopping criterion. Its
+accuracy is inflated and means nothing about generalisation.
+
+### 2. An earlier set of numbers was retracted, not quietly dropped
+
+The first protocol used early stopping on val and evaluated the best-val
+checkpoint. It produced 43.00% ± 1.20 top-1 for the augmented transformer, which
+was the project's reference number for a while. **It is withdrawn and is not
+comparable to anything in the results table.** Two confounds:
+
+1. **The stopping step, not the change under test, drove the score.** Val is 116
+   clips with a noisy plateau, so 600 steps of patience stopped runs at
+   near-arbitrary points. The stopping-step range widened exactly as a change
+   perturbed val — baseline 100 steps, augmentation 650, separator trim 2,200 —
+   and stopping step against test top-1 gave r = 0.949 within one variant and
+   r = 0.68 across all nine early-stopped runs.
+2. **Runs ended at wildly different learning rates.** With the cosine defined
+   over 4,000 steps, a run stopping at 1,400 ended at lr ×0.773 while one at
+   3,600 ended at ×0.027 — a 28-fold range, leaving short runs unannealed.
+
+The replacement protocol is a **fixed 2,400-step budget, no early stopping,
+cosine completing at the budget, final checkpoint evaluated** — the last part
+matters, because switching off early stopping while still loading the best-val
+checkpoint would have left val selecting the model anyway. The budget was chosen
+from the curves, not rounded to: smoothed val reaches 98% of its plateau by step
+1,600–1,700 and peaks at 1,600/1,750, so 2,400 is 1.37× the latest peak, and
+beyond it training loss keeps falling while val stays flat.
+
+Evidence the diagnosis was right: the separator-trim variant's top-1 sd fell
+from 0.0577 under early stopping to 0.0030 at a fixed budget — 19-fold. The
+variance was the protocol, not the data. `sweep.py` now **refuses to run** a
+comparison off the reference protocol rather than warning about it.
+
+### 3. A mechanism was recorded in the spec, then measured and corrected
+
+Dropping MediaPipe's z channel is the largest single effect in the project:
+**+7.10pp top-1 on the transformer, +11.34pp on the TCN**, disjoint ranges on
+both. That much is solid.
+
+The *explanation* was not. z is 33.1% of the feature vector at 1.5× the
+magnitude of x and y — because normalisation divides every channel by the
+inter-shoulder distance, which spec §4.2 correctly computes from x and y only.
+"z is harmful because it is loud" was written into the spec as a fact on the
+strength of that. **It was then tested and is mostly wrong:**
+
+| z handling | top-1 | vs dropped |
+|---|---|---|
+| z dropped | 0.5917 ± 0.0263 | — |
+| z rescaled to x,y's std | 0.5000 ± 0.0165 | −9.17pp, disjoint |
+| raw z | 0.4783 ± 0.0085 | −11.34pp, disjoint |
+
+Rescaling recovers only **19.1%** of the gain and does not even separate from
+raw z. A per-block ablation then refuted the follow-up hypothesis too — that z
+might be usable for the body while being noise for the 2D-inferred hands:
+
+| z kept for | channels | top-1 | per channel |
+|---|---|---|---|
+| nothing | 0 | 0.5917 ± 0.0263 | — |
+| pose only | 15 | 0.5434 ± 0.0061 | 0.322pp |
+| hands only | 42 | 0.5138 ± 0.0146 | 0.185pp |
+| everything | 91 | 0.4783 ± 0.0085 | 0.125pp |
+
+All three are disjoint *below* z-dropped. No block helps, and **pose z is the
+more harmful per channel** — pose-z-only outscores hands-z-only only because it
+adds 15 channels instead of 42, not because body depth is better. Every avenue
+for keeping z is now measured and closed. The spec records the correction rather
+than the original claim.
+
+### 4. Predictions were logged before each run, including the wrong ones
+
+Each experiment was predicted in advance. Six misses, and three of them share
+one root — worth more than the hit rate:
+
+| # | prediction | actual | root cause |
+|---|---|---|---|
+| 1 | separator trim +0.8pp | −2.86pp | **protocol** |
+| 2 | TCN +1.5pp, overlapping | +1.48pp, **disjoint** | **configuration-inheritance** |
+| 3 | scaled z 0.582 | 0.5000, both calls inverted | **correlation-as-mechanism** |
+| 4 | BiLSTM 0.480 | 0.3481 (−13.2pp) | **analogy-without-evidence** |
+| 5 | augmentation separates on top-1 | does not, once z is dropped | **configuration-inheritance** |
+| 6 | pose-z ≈ dropped, hands-z below | pose-z disjoint below too | **mechanism-from-plausibility** |
+
+- **protocol / configuration-inheritance** (#1, #2, #5) — three of six — are all
+  *the measurement conditions rather than the thing measured*. #1 changed val,
+  which was the stopping criterion. #5 was measured with z present and quoted
+  after z was dropped. #2 then reasoned *from* #5 and inherited its error. This
+  is why the protocol is now enforced in code.
+- **correlation-as-mechanism / mechanism-from-plausibility** (#3, #6) are a
+  mechanism asserted from plausibility and then predicted from. A correlation
+  that is real is not therefore the mechanism.
+- **analogy-without-evidence** (#4): BiLSTM had no prior measurement here and
+  was given a prior by analogy to the other two architectures.
+
+One more worth stating: **no prediction was offered for the z ablation**, which
+turned out to be the largest effect in the project.
+
+## Data licensing — read this before reusing anything
+
+WLASL is licensed **C-UDA** (Computational Use of Data Agreement v1.0):
+*"You will use the Data solely for Computational Use."* Academic and
+computational use only, no commercial use.
+
+Trained weights are **Results** and the C-UDA *"does not impose any restriction
+with respect to the use, modification, or distribution of Results"*. Raw video
+is **Data** and stays out of this repository. The split CSVs and the download
+and extraction logs are published; the landmark cache is not. Each call, with
+the quoted clauses and the one judgement call flagged as such:
+**[DATA_LICENCE.md](DATA_LICENCE.md)**.
+
+## Status
+
+**Milestone 4 (proxy corpus) is done. Milestone 1 is not closed.**
+
+Done: the Milestone 0 skeleton (synthetic dataset mode, three backbones,
+training loop, checkpointing, ONNX export); `extract.py` with a pure-NumPy
+normalisation core; the WLASL downloader, signer-independent split, loader,
+augmentation and separator trimming; the sweep harness; evaluation with
+confusion matrices.
+
+**Not closed — Milestone 1.** `overlay.py` is code-complete and tested but has
+never been run on real footage, so extraction is unverified by eye and the face
+landmark subset stays marked **PROVISIONAL**: the 478-point count is confirmed
+from the model's own metadata, but the semantics (that index 61 is a lip corner)
+are not.
+
+Not started: `manifest.py`, `capture.py` (the data collection tool, and per spec
+§4a the most important deliverable in the project), Stage B morphology and
+translation, and the CTC head for continuous signing.
+
+Open leads, unmeasured: a hand-rate quality gate alongside `min_pose_rate`; the
+ST-GCN backbone; and whether augmentation helps at all now that z is dropped —
+it no longer separates.
 
 ## Verifying extraction
 
@@ -407,7 +596,9 @@ sd is a rough spread indicator rather than a confidence interval.
 | transformer + aug + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
 | TCN + augmentation | 0.4783 +/- 0.0085 | 0.7219 +/- 0.0107 | 0.4442 +/- 0.0062 |
 | transformer + aug, **z dropped** | 0.5345 +/- 0.0222 | 0.7998 +/- 0.0178 | 0.4923 +/- 0.0273 |
+| TCN + aug, hands-z only | 0.5138 +/- 0.0146 | 0.7515 +/- 0.0180 | 0.4807 +/- 0.0199 |
 | TCN + aug, z rescaled to x,y's std | 0.5000 +/- 0.0165 | 0.7367 +/- 0.0078 | 0.4602 +/- 0.0126 |
+| TCN + aug, pose-z only | 0.5434 +/- 0.0061 | 0.7732 +/- 0.0181 | 0.5067 +/- 0.0052 |
 | **TCN + aug, z dropped** (current best) | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
 
 **Rescaling z does not rescue it.** The obvious explanation for z's harm is that
@@ -420,6 +611,14 @@ dropping z beats both with disjoint ranges. Most of the harm is z's *content*,
 not its magnitude. Not ruled out: z may be usable for pose while being noise for
 the 42 hand landmarks, which are inferred from a 2D image with weak depth priors.
 A per-block ablation would test that and has not been run.
+
+**The per-block hypothesis is refuted: no landmark block benefits from z.**
+pose-z-only (0.5434 +/- 0.0061) and hands-z-only (0.5138 +/- 0.0146) are both
+disjoint *below* z-dropped, and per channel pose z is the *more* harmful of the
+two (0.322pp against 0.185pp) — so the idea that body depth is usable while
+2D-inferred hand depth is noise does not survive measurement. Marginal harm also
+falls as z is added (0.322 -> 0.185 -> 0.125 pp per channel), so admitting any z
+at all carries most of the cost rather than each channel costing the same.
 
 **Dropping MediaPipe's z channel is by far the largest effect measured** —
 +7.10pp top-1 on the transformer and +11.34pp on the TCN, with non-overlapping
