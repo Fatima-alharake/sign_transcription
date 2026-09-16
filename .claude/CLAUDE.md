@@ -27,6 +27,7 @@ to these -- see the hard-won fact below.
 | transformer + aug + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
 | TCN + augmentation | 0.4783 +/- 0.0085 | 0.7219 +/- 0.0107 | 0.4442 +/- 0.0062 |
 | transformer + aug, z dropped | 0.5345 +/- 0.0222 | 0.7998 +/- 0.0178 | 0.4923 +/- 0.0273 |
+| TCN + aug, z scaled 0.6953 | 0.5000 +/- 0.0165 | 0.7367 +/- 0.0078 | 0.4602 +/- 0.0126 |
 | **TCN + aug, z dropped (REFERENCE)** | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
 
 Separations, as non-overlapping ranges and never as significance (at 3 v 3 the
@@ -36,14 +37,20 @@ transformer on top-1 only, by 0.30pp of range gap with z and 1.48pp without;
 the separator trim shows no effect on any metric.
 
 DROPPING MediaPipe's z IS THE LARGEST EFFECT MEASURED: +7.10pp top-1 on the
-transformer, +11.34pp on the TCN. Spec §4.3 expected z to be "unreliable but
-adds some depth cue"; on this corpus it is actively harmful. The reason is
-measurable and not a mystery: z is 91 of 275 features (33.1% of the vector) and
-its mean |value| in the cached tensors is 1.5x that of x and y. Normalisation
-divides every channel by the inter-shoulder distance, which spec §4.2 computes
-from x and y only -- correct, because including z would corrupt x and y too --
-so z is left on an arbitrary scale LARGER than the signal. A third of the input
-is loud noise dominating the input projection. DEFAULT TO use_z: false.
+transformer, +11.34pp on the TCN. DEFAULT IS use_z: false and it should stay
+that way.
+
+SCALE IS NOT WHY, AND THIS WAS TESTED. z is 91 of 275 features (33.1%) at 1.5x
+the magnitude of x and y -- both real measurements -- and it is tempting to
+conclude z is harmful for being loud. It is not. Rescaling z onto x,y's std
+(z_scale 0.6953, fitted on train only) recovers only 19.1% of the drop-z gain,
+and scaled-z does not even separate from raw z: 0.5000 +/- 0.0165 against
+0.4783 +/- 0.0085, overlapping ranges. Dropping z beats both with disjoint
+ranges. MOST OF THE HARM IS z's CONTENT, NOT ITS LOUDNESS. Do not try to rescue
+z by rescaling -- that path is implemented (FeatureConfig.z_scale,
+landmarks.scale_z), measured, and closed. NOT ruled out: z may be usable for
+pose while being noise for the 42 hand landmarks, which are inferred from a 2D
+image. A per-block z ablation would test that and has not been run.
 
 The ablation costs nothing: landmarks.drop_z slices z out of the use_z=True
 cache and is exactly equivalent to extracting with use_z=False, because x and y
@@ -67,13 +74,21 @@ comparison the spec actually describes and has not been run; a hand-rate gate
 in place of or alongside min_pose_rate (see the signer-121 fact); and BiLSTM,
 the third §6 baseline, which has never been run at all.
 
-A PREDICTION RECORD, kept because the misses are informative: separator trim
-predicted +0.8pp, actual -2.86pp under a confounded protocol (missed the
-protocol, not the data). TCN predicted +1.5pp with overlapping ranges, actual
-+1.48pp with NON-overlapping ranges (magnitude right, conclusion wrong). No
-prediction was made for the z ablation, which turned out to be the largest
-effect in the project so far -- worth noting that the biggest win came from a
-channel the spec had already flagged as suspect and nobody had tested.
+A PREDICTION RECORD, kept because the misses are informative:
+* separator trim: predicted +0.8pp, actual -2.86pp under a confounded protocol.
+  Modelled the data change, missed the protocol.
+* TCN: predicted +1.5pp with overlapping ranges, actual +1.48pp with
+  NON-overlapping ranges. Magnitude right, conclusion wrong.
+* z ablation: no prediction offered, and it was the largest effect in the
+  project. The biggest win came from a channel the spec had flagged as suspect
+  and nobody had tested.
+* scaled z: predicted 0.582 top-1, actual 0.5000 -- off by 8.2pp, and BOTH
+  directional calls were wrong (predicted separation from raw z and none
+  appeared; predicted no separation from no-z and it separated decisively).
+  The miss has the same shape as the spec error it was testing: a plausible
+  mechanism (33% of features at 1.5x magnitude) was promoted to a cause without
+  measurement, and the arithmetic built on it inherited the error. A correlation
+  that is real is not therefore the mechanism.
 
 RUN ARTIFACTS DO NOT SURVIVE A FRESH CLONE. `runs/` and `checkpoints/` are both
 gitignored, and zero files under them are tracked, so sweep_metrics.json, the

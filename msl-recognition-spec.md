@@ -85,8 +85,18 @@ fixed 2400-step budget, signer-disjoint test): dropping z gives **+7.10pp top-1
 on the transformer and +11.34pp on the TCN**, with non-overlapping seed ranges
 on both. It is the largest effect measured in the project.
 
-**Why it is harmful matters, because it is not "z carries no information".**
-z is harmful because it is **unscaled relative to x and y**:
+**Why it is harmful: SCALE WAS TESTED AND IS NOT THE MAIN CAUSE.** An earlier
+revision of this section asserted that z was harmful for being unscaled rather
+than uninformative. That was a plausible mechanism recorded as a fact before it
+was tested, and the direct test refutes it. Rescaling z onto x and y's standard
+deviation (`z_scale = 0.6953`, fitted on train only) recovers **only 19.1% of
+the gain from dropping z**, and scaled-z does not even separate from raw z
+(0.5000 +/- 0.0165 against 0.4783 +/- 0.0085, overlapping ranges), while
+dropping z remains decisively better than both (0.5917 +/- 0.0263, disjoint
+ranges against each). **Most of the harm is z's content, not its loudness.**
+
+The scale observations below are real measurements and remain true; what was
+wrong was the causal weight placed on them:
 
 - z is 91 of 275 features — **33.1% of the per-frame vector**.
 - Its mean absolute magnitude in the cached tensors is **1.5× that of x and y**.
@@ -96,12 +106,15 @@ z is harmful because it is **unscaled relative to x and y**:
   The divisor is therefore not z's natural scale, and z is left larger than the
   signal it accompanies.
 
-So a third of the input is **loud** noise, dominating the linear input
-projection, rather than quiet noise the model could learn to ignore. The
-distinction is actionable: if the problem were "z is meaningless", the only
-remedy would be to discard it. Because the problem is scale, **scaling z is
-worth testing** — a rescaled z could recover whatever depth cue is genuinely
-there without swamping x and y.
+A third of the input is therefore both loud *and* uninformative, and only the
+second part turns out to matter much. **Discard z; do not try to rescue it by
+rescaling.** The scaling path is implemented (`FeatureConfig.z_scale`,
+`landmarks.scale_z`) and measured, so it does not need re-testing.
+
+The residual possibility this does not rule out: MediaPipe's z may be usable for
+*pose* while being noise for the 42 hand landmarks, which are inferred from a 2D
+image with weak depth priors. A per-block z ablation would test that. It has not
+been run, and nothing here should be read as evidence about it either way.
 
 Storage is a separate decision from consumption. **The landmark cache always
 stores z** (`extract.CACHE_USE_Z`) and `use_z` is applied when loading: a cached

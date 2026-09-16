@@ -407,7 +407,19 @@ sd is a rough spread indicator rather than a confidence interval.
 | transformer + aug + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
 | TCN + augmentation | 0.4783 +/- 0.0085 | 0.7219 +/- 0.0107 | 0.4442 +/- 0.0062 |
 | transformer + aug, **z dropped** | 0.5345 +/- 0.0222 | 0.7998 +/- 0.0178 | 0.4923 +/- 0.0273 |
+| TCN + aug, z rescaled to x,y's std | 0.5000 +/- 0.0165 | 0.7367 +/- 0.0078 | 0.4602 +/- 0.0126 |
 | **TCN + aug, z dropped** (current best) | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
+
+**Rescaling z does not rescue it.** The obvious explanation for z's harm is that
+it is loud: 33.1% of the feature vector at 1.5x the magnitude of x and y. That
+explanation was tested and is mostly wrong. Rescaling z onto x and y's standard
+deviation (`z_scale = 0.6953`, fitted on the training split only) recovers just
+**19.1%** of the gain from dropping z, and scaled-z does not even separate from
+raw z — 0.5000 +/- 0.0165 against 0.4783 +/- 0.0085, overlapping ranges — while
+dropping z beats both with disjoint ranges. Most of the harm is z's *content*,
+not its magnitude. Not ruled out: z may be usable for pose while being noise for
+the 42 hand landmarks, which are inferred from a 2D image with weak depth priors.
+A per-block ablation would test that and has not been run.
 
 **Dropping MediaPipe's z channel is by far the largest effect measured** —
 +7.10pp top-1 on the transformer and +11.34pp on the TCN, with non-overlapping
