@@ -464,6 +464,17 @@ class WlaslLandmarkDataset:
         row = self.rows[index]
         features = np.load(row["cache"], mmap_mode="r")
         sequence = np.asarray(features)
+        # The cache holds use_z=True tensors. A use_z=False run slices them
+        # rather than re-extracting: the two are exactly equivalent because the
+        # normalisation origin and scale never depend on z.
+        if not self.cfg.feature.use_z and sequence.shape[1] == lm.feature_dim(True):
+            sequence = lm.drop_z(sequence)
+        elif sequence.shape[1] != self.cfg.feature.n_features:
+            raise ValueError(
+                f"cached tensor for {row['video_id']} has width "
+                f"{sequence.shape[1]}, config expects "
+                f"{self.cfg.feature.n_features}"
+            )
         trim = self._trims.get(row["video_id"])
         if trim is not None:
             sequence = sequence[trim.keep_start:trim.keep_end]

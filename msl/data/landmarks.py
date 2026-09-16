@@ -146,6 +146,36 @@ def block_slice(block: str, use_z: bool = True) -> slice:
     raise KeyError(f"unknown feature block {block!r}")
 
 
+def drop_z(features):
+    """Convert a use_z=True frame tensor into its use_z=False equivalent.
+
+    EXACT, not approximate. `normalise_frame` derives the origin and the scale
+    the same way whichever setting is active -- the inter-shoulder divisor is
+    computed from x and y only (spec S4.2), and z never enters it -- so the x
+    and y of a normalised frame do not depend on use_z. Dropping every third
+    coordinate therefore reproduces what extraction with use_z=False would have
+    written, byte for byte, and `tests/test_landmarks.py` asserts exactly that
+    against normalise_frame rather than trusting this comment.
+
+    This exists so the z ablation costs nothing: the cache holds 275-dim
+    tensors, and re-extracting 1127 clips through MediaPipe to remove one
+    channel per landmark would take hours to produce data we can slice.
+    """
+    import numpy as np
+
+    features = np.asarray(features)
+    wide = feature_dim(True)
+    if features.shape[-1] != wide:
+        raise ValueError(
+            f"expected a use_z=True tensor of width {wide}, got {features.shape[-1]}"
+        )
+    n_frames = features.shape[0]
+    coords = features[:, : N_LANDMARKS * 3].reshape(n_frames, N_LANDMARKS, 3)
+    kept = coords[:, :, :2].reshape(n_frames, N_LANDMARKS * 2)
+    visibility = features[:, visibility_slice(True)]
+    return np.concatenate([kept, visibility], axis=1).astype(features.dtype, copy=False)
+
+
 def visibility_slice(use_z: bool = True) -> slice:
     """Slice selecting the two trailing per-hand visibility scalars."""
     total = feature_dim(use_z)

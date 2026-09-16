@@ -67,3 +67,70 @@ def test_hand_blocks_are_the_same_size() -> None:
 def test_unknown_block_raises() -> None:
     with pytest.raises(KeyError):
         lm.block_slice("elbow")
+
+
+def test_drop_z_matches_extraction_with_use_z_false():
+    """Slicing z out of a use_z=True frame == extracting with use_z=False.
+
+    This is what makes the z ablation free: the cache holds 275-dim tensors and
+    the ablation slices them instead of re-running MediaPipe over 1127 clips.
+    If normalisation ever makes x or y depend on z, this test fails and the
+    ablation stops being valid.
+    """
+    import numpy as np
+
+    from msl.data import landmarks as lm
+    from msl.data.extract import FrameLandmarks, normalise_frame
+
+    rng = np.random.default_rng(7)
+    pose = rng.normal(0.5, 0.15, size=(lm.N_POSE, 3))
+    # a real shoulder separation so the frame normalises rather than degenerating
+    pose[lm.LEFT_SHOULDER_POS] = [0.40, 0.45, 0.02]
+    pose[lm.RIGHT_SHOULDER_POS] = [0.60, 0.45, -0.02]
+    left = rng.normal(0.4, 0.1, size=(lm.N_HAND_LANDMARKS, 3))
+    right = rng.normal(0.6, 0.1, size=(lm.N_HAND_LANDMARKS, 3))
+    face = rng.normal(0.5, 0.05, size=(lm.N_FACE, 3))
+
+    frame = FrameLandmarks(pose=pose, left_hand=left, right_hand=right, face=face)
+    # 16:9, so the aspect correction is actually exercised rather than being 1.0
+    wide, ok_wide = normalise_frame(frame, width=1920, height=1080, use_z=True)
+    narrow, ok_narrow = normalise_frame(frame, width=1920, height=1080, use_z=False)
+    assert ok_wide and ok_narrow
+
+    sliced = lm.drop_z(wide[None, :])[0]
+    np.testing.assert_allclose(sliced, narrow, atol=1e-6)
+
+
+def test_drop_z_preserves_absent_hands_and_flags():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+    from msl.data.extract import FrameLandmarks, normalise_frame
+
+    rng = np.random.default_rng(8)
+    pose = rng.normal(0.5, 0.15, size=(lm.N_POSE, 3))
+    pose[lm.LEFT_SHOULDER_POS] = [0.40, 0.45, 0.0]
+    pose[lm.RIGHT_SHOULDER_POS] = [0.60, 0.45, 0.0]
+    face = rng.normal(0.5, 0.05, size=(lm.N_FACE, 3))
+    right = rng.normal(0.6, 0.1, size=(lm.N_HAND_LANDMARKS, 3))
+
+    frame = FrameLandmarks(pose=pose, left_hand=None, right_hand=right, face=face)
+    wide, _ = normalise_frame(frame, width=1920, height=1080, use_z=True)
+    sliced = lm.drop_z(wide[None, :])[0]
+    narrow, _ = normalise_frame(frame, width=1920, height=1080, use_z=False)
+    np.testing.assert_allclose(sliced, narrow, atol=1e-6)
+    # absent left hand stays zero, and its flag stays off, after slicing
+    assert np.all(sliced[lm.block_slice("left_hand", False)] == 0.0)
+    assert sliced[lm.visibility_slice(False)][0] == 0.0
+    assert sliced[lm.visibility_slice(False)][1] == 1.0
+
+
+def test_drop_z_rejects_a_tensor_that_is_already_narrow():
+    import numpy as np
+    import pytest
+
+    from msl.data import landmarks as lm
+
+    narrow = np.zeros((4, lm.feature_dim(False)), dtype=np.float32)
+    with pytest.raises(ValueError, match="use_z=True"):
+        lm.drop_z(narrow)
