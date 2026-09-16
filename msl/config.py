@@ -23,6 +23,10 @@ class FeatureConfig:
     # The landmark cache still stores z regardless (extract.CACHE_USE_Z); this
     # flag only decides whether training consumes it.
     use_z: bool = False
+    # Multiplier applied to the z channel when use_z is True. None leaves z at
+    # its raw scale, which is the condition spec S4.3 measured as harmful. The
+    # value is a FITTED PARAMETER and must be fitted on the training split only.
+    z_scale: float | None = None
     seq_len: int = 64  # every clip is resampled to this many frames
 
     @property

@@ -176,6 +176,32 @@ def drop_z(features):
     return np.concatenate([kept, visibility], axis=1).astype(features.dtype, copy=False)
 
 
+def scale_z(features, factor: float):
+    """Multiply the z channel of a use_z=True frame tensor by `factor`.
+
+    Tests spec S4.3's refined claim. z is harmful because it is UNSCALED -- a
+    third of the vector at 1.5x the magnitude of x and y -- rather than because
+    it is meaningless, so putting it on x and y's scale should recover whatever
+    depth cue is genuinely there. If the scaled channel still does not help,
+    that is evidence about z's information content rather than its loudness.
+
+    Zeroed blocks stay zeroed (0 * factor == 0) and the visibility flags are
+    outside the coordinate region, so neither invariant is touched.
+    """
+    import numpy as np
+
+    features = np.asarray(features)
+    wide = feature_dim(True)
+    if features.shape[-1] != wide:
+        raise ValueError(
+            f"expected a use_z=True tensor of width {wide}, got {features.shape[-1]}"
+        )
+    out = features.copy()
+    coords = out[:, : N_LANDMARKS * 3].reshape(features.shape[0], N_LANDMARKS, 3)
+    coords[:, :, 2] *= factor
+    return out
+
+
 def visibility_slice(use_z: bool = True) -> slice:
     """Slice selecting the two trailing per-hand visibility scalars."""
     total = feature_dim(use_z)

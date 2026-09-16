@@ -469,6 +469,8 @@ class WlaslLandmarkDataset:
         # normalisation origin and scale never depend on z.
         if not self.cfg.feature.use_z and sequence.shape[1] == lm.feature_dim(True):
             sequence = lm.drop_z(sequence)
+        elif self.cfg.feature.use_z and self.cfg.feature.z_scale is not None:
+            sequence = lm.scale_z(sequence, self.cfg.feature.z_scale)
         elif sequence.shape[1] != self.cfg.feature.n_features:
             raise ValueError(
                 f"cached tensor for {row['video_id']} has width "

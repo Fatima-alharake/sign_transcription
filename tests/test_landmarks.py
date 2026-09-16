@@ -134,3 +134,42 @@ def test_drop_z_rejects_a_tensor_that_is_already_narrow():
     narrow = np.zeros((4, lm.feature_dim(False)), dtype=np.float32)
     with pytest.raises(ValueError, match="use_z=True"):
         lm.drop_z(narrow)
+
+
+def test_scale_z_touches_only_the_z_channel():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    rng = np.random.default_rng(11)
+    f = rng.normal(0.4, 0.3, size=(6, lm.feature_dim(True))).astype(np.float32)
+    out = lm.scale_z(f, 0.5)
+    c_in = f[:, : lm.N_LANDMARKS * 3].reshape(6, lm.N_LANDMARKS, 3)
+    c_out = out[:, : lm.N_LANDMARKS * 3].reshape(6, lm.N_LANDMARKS, 3)
+    np.testing.assert_allclose(c_out[:, :, :2], c_in[:, :, :2], atol=1e-6)
+    np.testing.assert_allclose(c_out[:, :, 2], c_in[:, :, 2] * 0.5, atol=1e-6)
+    # visibility flags sit outside the coordinate region and must be untouched
+    np.testing.assert_allclose(out[:, lm.visibility_slice(True)],
+                               f[:, lm.visibility_slice(True)], atol=1e-6)
+
+
+def test_scale_z_keeps_zeroed_blocks_zero():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = np.zeros((4, lm.feature_dim(True)), dtype=np.float32)
+    f[:, lm.block_slice("pose", True)] = 0.3
+    out = lm.scale_z(f, 0.7)
+    assert np.all(out[:, lm.block_slice("left_hand", True)] == 0.0)
+
+
+def test_scale_z_does_not_mutate_its_input():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = np.ones((3, lm.feature_dim(True)), dtype=np.float32)
+    before = f.copy()
+    lm.scale_z(f, 0.5)
+    np.testing.assert_array_equal(f, before)
