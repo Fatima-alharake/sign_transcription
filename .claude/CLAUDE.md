@@ -22,17 +22,32 @@ to these -- see the hard-won fact below.
 
 | variant | top-1 | top-5 | macro F1 |
 |---|---|---|---|
-| baseline, no augmentation | 0.4241 +/- 0.0248 | 0.6982 +/- 0.0156 | 0.3998 +/- 0.0233 |
-| **+ augmentation (reference)** | **0.4635 +/- 0.0075** | 0.7041 +/- 0.0185 | 0.4330 +/- 0.0200 |
-| + augmentation + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
+| transformer, no augmentation | 0.4241 +/- 0.0248 | 0.6982 +/- 0.0156 | 0.3998 +/- 0.0233 |
+| transformer + augmentation | 0.4635 +/- 0.0075 | 0.7041 +/- 0.0185 | 0.4330 +/- 0.0200 |
+| transformer + aug + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
+| TCN + augmentation | 0.4783 +/- 0.0085 | 0.7219 +/- 0.0107 | 0.4442 +/- 0.0062 |
+| transformer + aug, z dropped | 0.5345 +/- 0.0222 | 0.7998 +/- 0.0178 | 0.4923 +/- 0.0273 |
+| **TCN + aug, z dropped (REFERENCE)** | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
 
-Augmentation vs baseline separates on TOP-1 ONLY: ranges .4083-.4527 against
-.4556-.4704, non-overlapping, every augmented seed above every baseline seed.
-top-5 and macro F1 overlap. The separator trim shows NO effect -- its top-1 range
-sits entirely inside augmentation's -- though its sd is the smallest of the three
-on every metric, which is suggestive of a stabilising effect and nothing more at
-n=3. Describe separation as non-overlapping ranges, never as significance: with
-3 v 3 seeds the smallest achievable two-sided rank p is 0.1.
+Separations, as non-overlapping ranges and never as significance (at 3 v 3 the
+smallest achievable two-sided rank p is 0.1): dropping z separates on both
+architectures by a wide margin; augmentation separates on top-1 only; TCN beats
+transformer on top-1 only, by 0.30pp of range gap with z and 1.48pp without;
+the separator trim shows no effect on any metric.
+
+DROPPING MediaPipe's z IS THE LARGEST EFFECT MEASURED: +7.10pp top-1 on the
+transformer, +11.34pp on the TCN. Spec §4.3 expected z to be "unreliable but
+adds some depth cue"; on this corpus it is actively harmful. The reason is
+measurable and not a mystery: z is 91 of 275 features (33.1% of the vector) and
+its mean |value| in the cached tensors is 1.5x that of x and y. Normalisation
+divides every channel by the inter-shoulder distance, which spec §4.2 computes
+from x and y only -- correct, because including z would corrupt x and y too --
+so z is left on an arbitrary scale LARGER than the signal. A third of the input
+is loud noise dominating the input projection. DEFAULT TO use_z: false.
+
+The ablation costs nothing: landmarks.drop_z slices z out of the use_z=True
+cache and is exactly equivalent to extracting with use_z=False, because x and y
+never depend on z. Do not re-extract for it.
 
 THE 0.4300 +/- 0.0120 FIGURE IS DEAD. It was the early-stopping reference and is
 not comparable to anything above. Do not quote it, and do not place it beside a
@@ -44,11 +59,21 @@ at a fixed budget. Use msl/train/sweep.py with --max-steps 2400
 --no-early-stopping; it records the protocol in sweep_metrics.json and warns when
 run under early stopping.
 
-**Next step: the TCN, then the use_z ablation.** Each at 3 seeds on the fixed
-budget against the reference above. Separator trimming is DONE and measured: no
-effect on the mean, kept in the codebase behind
-`data.drop_separator_frames` (default false) because it is a genuine data
-correction even though it does not move the number.
+**Next step: not yet chosen.** Done and measured: augmentation, separator
+trimming (no effect, kept behind `data.drop_separator_frames`, default false),
+TCN, and the z ablation. Open leads, in rough order of expected value: re-test
+the spec §6 "TCN is the one to beat" claim WITHOUT augmentation, which is the
+comparison the spec actually describes and has not been run; a hand-rate gate
+in place of or alongside min_pose_rate (see the signer-121 fact); and BiLSTM,
+the third §6 baseline, which has never been run at all.
+
+A PREDICTION RECORD, kept because the misses are informative: separator trim
+predicted +0.8pp, actual -2.86pp under a confounded protocol (missed the
+protocol, not the data). TCN predicted +1.5pp with overlapping ranges, actual
++1.48pp with NON-overlapping ranges (magnitude right, conclusion wrong). No
+prediction was made for the z ablation, which turned out to be the largest
+effect in the project so far -- worth noting that the biggest win came from a
+channel the spec had already flagged as suspect and nobody had tested.
 
 RUN ARTIFACTS DO NOT SURVIVE A FRESH CLONE. `runs/` and `checkpoints/` are both
 gitignored, and zero files under them are tracked, so sweep_metrics.json, the

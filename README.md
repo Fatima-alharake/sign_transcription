@@ -402,23 +402,52 @@ sd is a rough spread indicator rather than a confidence interval.
 
 | variant | test top-1 | test top-5 | test macro F1 |
 |---|---|---|---|
-| baseline, no augmentation | 0.4241 +/- 0.0248 | 0.6982 +/- 0.0156 | 0.3998 +/- 0.0233 |
-| **+ spec §5 augmentation** | **0.4635 +/- 0.0075** | 0.7041 +/- 0.0185 | 0.4330 +/- 0.0200 |
-| + augmentation + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
+| transformer, no augmentation | 0.4241 +/- 0.0248 | 0.6982 +/- 0.0156 | 0.3998 +/- 0.0233 |
+| transformer + augmentation | 0.4635 +/- 0.0075 | 0.7041 +/- 0.0185 | 0.4330 +/- 0.0200 |
+| transformer + aug + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
+| TCN + augmentation | 0.4783 +/- 0.0085 | 0.7219 +/- 0.0107 | 0.4442 +/- 0.0062 |
+| transformer + aug, **z dropped** | 0.5345 +/- 0.0222 | 0.7998 +/- 0.0178 | 0.4923 +/- 0.0273 |
+| **TCN + aug, z dropped** (current best) | **0.5917 +/- 0.0263** | 0.7988 +/- 0.0135 | 0.5460 +/- 0.0354 |
+
+**Dropping MediaPipe's z channel is by far the largest effect measured** —
++7.10pp top-1 on the transformer and +11.34pp on the TCN, with non-overlapping
+ranges in both cases and by a wide margin. Spec §4.3 anticipated z as
+"unreliable but adds some depth cue"; on this corpus it is not a weak cue, it is
+actively harmful, and the reason is measurable. z is 91 of 275 features (33.1%
+of the vector) and its mean absolute magnitude in the cached tensors is **1.5x
+that of x and y**. Normalisation divides every channel by the inter-shoulder
+distance, which spec §4.2 deliberately computes from x and y only -- correct,
+since including z would corrupt x and y too -- but the side effect is that z is
+left on an arbitrary scale *larger* than the signal. A third of the input is
+loud noise, and it dominates the linear input projection. Anything that consumes
+these features should default to `use_z: false`.
 
 What separates and what does not, stated as ranges rather than significance —
 with 3 v 3 seeds the smallest achievable two-sided rank p is 0.1, so no result
 here can reach p < 0.05 by construction:
 
-- **Augmentation vs baseline on top-1: non-overlapping ranges.** Baseline spans
-  .4083–.4527, augmented .4556–.4704; every augmented seed beats every baseline
-  seed. This is the strongest evidence three seeds can give.
-- **Augmentation vs baseline on top-5 and macro F1: overlapping.** No separation.
+- **Dropping z: non-overlapping by a wide margin, on both architectures.**
+  Transformer .5089–.5473 against .4556–.4704; TCN .5621–.6124 against
+  .4734–.4882. The clearest result in the table.
+- **Augmentation vs no augmentation on top-1: non-overlapping ranges.** Baseline
+  spans .4083–.4527, augmented .4556–.4704. On top-5 and macro F1 they overlap,
+  so no separation there.
+- **TCN vs transformer on top-1: non-overlapping, but narrowly.** With z,
+  .4734–.4882 against .4556–.4704 — a 0.30pp gap between the TCN's worst seed
+  and the transformer's best, which one more seed either side could close.
+  Without z the gap widens to 1.48pp (.5621–.6124 against .5089–.5473). top-5
+  and macro F1 overlap between the two architectures in both conditions.
 - **Separator trim vs augmentation: no effect on any metric.** The trim's top-1
   range (.4586–.4645) sits entirely inside augmentation's (.4556–.4704). The
-  trim does appear to *stabilise* training — its sd is the smallest of the three
-  on every metric — but at n=3 an sd estimate is itself very noisy, so treat
-  that as suggestive only.
+  trim does appear to *stabilise* training — its sd is the smallest of that
+  group on every metric — but at n=3 an sd estimate is itself very noisy, so
+  treat that as suggestive only. It is kept as a genuine data correction that
+  does not move the number.
+
+Budget fit is recorded per run in `sweep_metrics.json` so a delta can be checked
+for the failure where the budget suits one arm and not the other. At 2400 steps
+every variant lands at a final training loss of 0.86–0.88 with a late slope
+under 0.04 per 1000 steps: converged, not truncated.
 
 #### Earlier numbers under early stopping are NOT comparable
 

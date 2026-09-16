@@ -212,6 +212,22 @@ def main(argv: list[str] | None = None) -> int:
                               else f"fixed-budget {cfg.train.max_steps}-step runs only"),
         },
         "seeds": args.seeds,
+        # Budget-fit evidence, recorded so a variant comparison can be checked
+        # for the failure where the budget suits one arm and not the other: a
+        # run still descending steeply at the budget was truncated, one flat for
+        # most of it wasted the tail. Compare final_loss and late_slope across
+        # variants before reading any delta as an architecture or data effect.
+        "budget_fit": {
+            seed: {
+                "final_loss_mean_last_100": round(float(np.mean(v[-100:])), 4),
+                "loss_at_half_budget": round(float(np.mean(v[len(v) // 2 - 50:
+                                                            len(v) // 2 + 50])), 4),
+                "late_slope_per_1k_steps": round(
+                    float((np.mean(v[-100:]) - np.mean(v[-600:-500])) / 500 * 1000), 4
+                ) if len(v) >= 600 else None,
+            }
+            for seed, v in sorted(losses_by_seed.items())
+        },
         "per_seed": per_seed,
         "aggregate": agg,
         "note": "val accuracy deliberately absent: signer-dependent, "
