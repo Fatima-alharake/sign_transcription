@@ -1,0 +1,82 @@
+{
+  "label": "+ augmentation + separator trim",
+  "language": "American Sign Language (WLASL100)",
+  "corpus_completeness": "55.3% (1127 of 2038 clips)",
+  "arch": "transformer",
+  "use_z": true,
+  "augmentation": {
+    "enabled": true,
+    "speed_min": 0.8,
+    "speed_max": 1.2,
+    "frame_dropout": 0.05,
+    "rotation_degrees": 10.0,
+    "scale_min": 0.9,
+    "scale_max": 1.1,
+    "joint_noise_std": 0.01,
+    "mirror": false
+  },
+  "seeds": [
+    1234,
+    2345,
+    3456
+  ],
+  "per_seed": [
+    {
+      "seed": 1234,
+      "test_top1": 0.4024,
+      "test_top5": 0.7041,
+      "test_macro_f1": 0.3563,
+      "steps_run": 1900
+    },
+    {
+      "seed": 2345,
+      "test_top1": 0.3432,
+      "test_top5": 0.6923,
+      "test_macro_f1": 0.2928,
+      "steps_run": 1400
+    },
+    {
+      "seed": 3456,
+      "test_top1": 0.4586,
+      "test_top5": 0.713,
+      "test_macro_f1": 0.4162,
+      "steps_run": 3600
+    }
+  ],
+  "aggregate": {
+    "test_top1": {
+      "mean": 0.4014,
+      "sd": 0.0577,
+      "min": 0.3432,
+      "max": 0.4586,
+      "values": [
+        0.4024,
+        0.3432,
+        0.4586
+      ]
+    },
+    "test_top5": {
+      "mean": 0.7031,
+      "sd": 0.0104,
+      "min": 0.6923,
+      "max": 0.713,
+      "values": [
+        0.7041,
+        0.6923,
+        0.713
+      ]
+    },
+    "test_macro_f1": {
+      "mean": 0.3551,
+      "sd": 0.0617,
+      "min": 0.2928,
+      "max": 0.4162,
+      "values": [
+        0.3563,
+        0.2928,
+        0.4162
+      ]
+    }
+  },
+  "note": "val accuracy deliberately absent: signer-dependent, stopping criterion only"
+}
