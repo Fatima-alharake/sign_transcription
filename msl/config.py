@@ -79,6 +79,12 @@ class DataConfig:
     # genuinely broken pose output.
     min_shoulder_distance: float = 1e-3
 
+    # Drop WLASL's black separator frames from the labelled range at load time
+    # (msl/data/separator_trim.py). A data fix, not a model change: the clip is
+    # kept and only the frames go. Off by default so the reference variant stays
+    # reproducible.
+    drop_separator_frames: bool = False
+
     min_pose_confidence: float = 0.5
     min_hand_confidence: float = 0.5
     min_face_confidence: float = 0.5

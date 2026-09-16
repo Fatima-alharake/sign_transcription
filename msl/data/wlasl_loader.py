@@ -41,6 +41,7 @@ import numpy as np
 from msl.config import DataConfig, ExperimentConfig, FeatureConfig
 from msl.data import landmarks as lm
 from msl.data.augment import AugmentConfig, augment_sequence
+from msl.data.separator_trim import load_trims
 from msl.data.extract import (
     ClipLandmarks,
     VideoReadError,
@@ -447,6 +448,12 @@ class WlaslLandmarkDataset:
         self.augment = augment and split == "train" and cfg.augment.enabled
         self._aug = AugmentConfig(**asdict(cfg.augment)) if self.augment else None
         self._rng = np.random.default_rng(cfg.train.seed)
+        # Separator trimming applies to EVERY split, unlike augmentation. It is
+        # a correction to the data, not a training-time perturbation, so leaving
+        # val or test untrimmed would mean evaluating on frames we have
+        # established do not belong to the labelled sign. It is a no-op on test
+        # in practice: signer 121 appears only in train and val.
+        self._trims = load_trims() if cfg.data.drop_separator_frames else {}
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -457,6 +464,9 @@ class WlaslLandmarkDataset:
         row = self.rows[index]
         features = np.load(row["cache"], mmap_mode="r")
         sequence = np.asarray(features)
+        trim = self._trims.get(row["video_id"])
+        if trim is not None:
+            sequence = sequence[trim.keep_start:trim.keep_end]
         if self._aug is not None:
             # Temporal ops change the length, so augment before the resample.
             sequence = augment_sequence(

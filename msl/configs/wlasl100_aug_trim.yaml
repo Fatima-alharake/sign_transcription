@@ -1,0 +1,64 @@
+# WLASL100 backbone pretraining -- AMERICAN SIGN LANGUAGE, not MSL.
+#
+# Every number produced from this config is an ASL number, on a corpus that is
+# 55.3% complete (1127 of 2038 clips; 911 lost to dead hosts and private
+# videos). It exists to pretrain a backbone, never to supply MSL vocabulary.
+#
+# Run 3: the augmented reference plus separator-frame trimming. EVERYTHING ELSE
+# IS IDENTICAL to wlasl100_aug.yaml -- same seeds, architecture, schedule and
+# augmentation parameters -- so the delta against the reference is attributable
+# to the trim alone.
+#
+# The trim drops WLASL's black separator frames from inside the labelled range
+# (msl/data/separator_trim.py): 36 clips reach the dataset, 30 train and 6 val,
+# losing 31% of their frames. Frames are dropped, never clips. Test is
+# untouched in practice -- signer 121 appears only in train and val.
+
+data:
+  drop_separator_frames: true
+
+feature:
+  use_z: true
+  seq_len: 64
+
+model:
+  arch: transformer    # spec S6 baseline. TCN is the one to beat -- see README.
+  d_model: 128
+  n_layers: 4
+  n_heads: 4
+  ffn_dim: 256
+  dropout: 0.3         # small-data regime: regularise hard
+  tcn_kernel_size: 5
+
+train:
+  batch_size: 32       # 666 training clips -> ~21 steps per epoch
+  lr: 0.001
+  weight_decay: 0.01
+  max_steps: 4000      # ~192 epochs; early stopping is expected to fire first
+  warmup_steps: 200
+  label_smoothing: 0.1
+  grad_clip: 1.0
+  eval_every: 50       # ~2.4 epochs
+  patience: 12         # 600 steps without a val top-1 improvement
+  seed: 1234
+  num_workers: 0
+  out_dir: checkpoints/wlasl100_aug_trim
+  log_dir: runs/wlasl100_aug_trim
+  tensorboard: true
+
+synthetic:
+  n_train: 128
+  n_val: 32
+  num_classes: 100     # unused on this path; kept consistent with the vocabulary
+  seed: 0
+
+augment:
+  enabled: true
+  speed_min: 0.8         # realised as a random temporal crop -- see augment.py
+  speed_max: 1.2
+  frame_dropout: 0.05
+  rotation_degrees: 10.0 # about the camera axis
+  scale_min: 0.9
+  scale_max: 1.1
+  joint_noise_std: 0.01  # inter-shoulder units (shoulders sit at +/-0.5)
+  mirror: false          # OFF: mirroring changes signer handedness (spec S5)
