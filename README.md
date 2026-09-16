@@ -385,6 +385,72 @@ inflated and must never appear in a report, a plot title, or this README.**
   but the backbone will be tuned to citation form, and continuous signing has
   coarticulation and compressed transitions that it will not have seen.
 
+### Results — backbone pretraining on WLASL100 (ASL, not MSL)
+
+**Every number below is American Sign Language**, on a corpus that is 55.3%
+complete (1127 of 2038 clips; 911 lost to dead hosts and private videos). It
+exists to pretrain a backbone; the vocabulary does not transfer and none of it
+is an MSL result. Signer-independent split, test signers disjoint from train,
+338 test clips, 100 classes, chance top-1 1.0%. The known limitations above
+apply to all of it. **Val accuracy is never reported** — it is signer-dependent
+and a stopping criterion only.
+
+Protocol: **fixed budget of 2400 steps, no early stopping, cosine completing at
+the budget, final checkpoint evaluated.** Three seeds (1234/2345/3456) per
+variant, untuned. Mean +/- sample sd, with the min-max range, because at n=3 the
+sd is a rough spread indicator rather than a confidence interval.
+
+| variant | test top-1 | test top-5 | test macro F1 |
+|---|---|---|---|
+| baseline, no augmentation | 0.4241 +/- 0.0248 | 0.6982 +/- 0.0156 | 0.3998 +/- 0.0233 |
+| **+ spec §5 augmentation** | **0.4635 +/- 0.0075** | 0.7041 +/- 0.0185 | 0.4330 +/- 0.0200 |
+| + augmentation + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
+
+What separates and what does not, stated as ranges rather than significance —
+with 3 v 3 seeds the smallest achievable two-sided rank p is 0.1, so no result
+here can reach p < 0.05 by construction:
+
+- **Augmentation vs baseline on top-1: non-overlapping ranges.** Baseline spans
+  .4083–.4527, augmented .4556–.4704; every augmented seed beats every baseline
+  seed. This is the strongest evidence three seeds can give.
+- **Augmentation vs baseline on top-5 and macro F1: overlapping.** No separation.
+- **Separator trim vs augmentation: no effect on any metric.** The trim's top-1
+  range (.4586–.4645) sits entirely inside augmentation's (.4556–.4704). The
+  trim does appear to *stabilise* training — its sd is the smallest of the three
+  on every metric — but at n=3 an sd estimate is itself very noisy, so treat
+  that as suggestive only.
+
+#### Earlier numbers under early stopping are NOT comparable
+
+An earlier protocol used early stopping on val (patience 12 at eval_every 50)
+and evaluated the best-val checkpoint. It produced **0.4300 +/- 0.0120 top-1 for
+the augmented variant**, which was quoted as the reference for a time. **That
+number is not comparable to anything in the table above and must not be placed
+beside it.** Two confounds, both since fixed:
+
+1. **The stopping step, not the change under test, drove the score.** Val is 116
+   clips and its plateau is noisy, so 600 steps of patience stopped runs at
+   near-arbitrary points. The stopping-step range widened exactly as a change
+   perturbed val — baseline 100 steps, augmentation 650, separator trim 2200 —
+   and stopping step against test top-1 gave r = 0.949 within the trim variant
+   and r = 0.68 across all nine early-stopped runs. More seeds could not fix
+   this: they average a confound rather than remove it.
+2. **Runs ended at wildly different learning rates.** With the cosine defined
+   over 4000 steps, a run stopping at 1400 ended at lr x 0.773 while one at 3600
+   ended at x 0.027 — a 28-fold range, so early-stopped models were left hot and
+   unannealed.
+
+The fixed-budget protocol removes both, and the effect is visible: under early
+stopping the separator trim scored 0.4014 +/- 0.0577 top-1, and at a fixed
+budget the same data change scores 0.4615 +/- 0.0030 — a 19-fold reduction in
+spread. The variance was the protocol, not the data. Note also that the two
+protocols disagree about *which* metric separates: early stopping separated
+top-5 and not top-1, the fixed budget the reverse.
+
+Because the cosine now completes at 2400, these runs are not "the first 2400
+steps" of the old schedule — the learning rate decays faster throughout, so old
+numbers cannot be read as a prefix of new ones.
+
 ## What does not go in git
 
 Raw video and cached `.npy` landmarks are excluded by `.gitignore` and belong on

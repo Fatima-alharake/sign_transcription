@@ -45,6 +45,12 @@ class TrainConfig:
     grad_clip: float = 1.0
     eval_every: int = 25
     patience: int = 5  # early-stopping patience, in evaluations not steps
+    # Early stopping on a small val set makes the stopping step -- not the change
+    # under test -- drive the score, so variant comparisons run with this False,
+    # a fixed step budget, and the FINAL checkpoint evaluated rather than the
+    # best-val one. Leaving it True but evaluating best.pt would keep val in the
+    # loop by the back door.
+    early_stopping: bool = True
     seed: int = 1234
     # DataLoader workers. Machine has 16GB RAM typically ~90% committed, so each
     # worker's copy of the parent process matters; keep this low and rely on

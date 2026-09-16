@@ -15,31 +15,40 @@ Every number here is AMERICAN SIGN LANGUAGE on a corpus that is 55.3% complete
 (1127 of 2038 clips), signer-disjoint test, 338 test clips, 100 classes, chance
 top-1 1.0%. Never quote one without that label. Val is never reported.
 
-**Reference variant: transformer + spec §5 augmentation**, 3 seeds
-(1234/2345/3456), untuned:
+**PROTOCOL: fixed budget 2400 steps, no early stopping, cosine completing at the
+budget, FINAL checkpoint evaluated.** 3 seeds (1234/2345/3456), untuned. Early
+stopping is not used for variant comparisons and its numbers are not comparable
+to these -- see the hard-won fact below.
 
 | variant | top-1 | top-5 | macro F1 |
 |---|---|---|---|
-| baseline, no augmentation | 0.4053 +/- 0.0207 | 0.6815 +/- 0.0061 | 0.3834 +/- 0.0235 |
-| **+ augmentation (reference)** | **0.4300 +/- 0.0120** | **0.7041 +/- 0.0119** | **0.3970 +/- 0.0088** |
+| baseline, no augmentation | 0.4241 +/- 0.0248 | 0.6982 +/- 0.0156 | 0.3998 +/- 0.0233 |
+| **+ augmentation (reference)** | **0.4635 +/- 0.0075** | 0.7041 +/- 0.0185 | 0.4330 +/- 0.0200 |
+| + augmentation + separator trim | 0.4615 +/- 0.0030 | 0.7051 +/- 0.0090 | 0.4245 +/- 0.0061 |
 
-Read per metric, not as one verdict: top-5 separates cleanly (every augmented
-seed beats every baseline seed, ranges disjoint); top-1 is borderline (+2.47pp
-against a baseline sd of 2.07pp, ranges still overlap); macro F1 sits inside the
-spread with the augmented range contained in the baseline range.
+Augmentation vs baseline separates on TOP-1 ONLY: ranges .4083-.4527 against
+.4556-.4704, non-overlapping, every augmented seed above every baseline seed.
+top-5 and macro F1 overlap. The separator trim shows NO effect -- its top-1 range
+sits entirely inside augmentation's -- though its sd is the smallest of the three
+on every metric, which is suggestive of a stabilising effect and nothing more at
+n=3. Describe separation as non-overlapping ranges, never as significance: with
+3 v 3 seeds the smallest achievable two-sided rank p is 0.1.
 
-THREE SEEDS MINIMUM FOR EVERY VARIANT FROM HERE, reported as mean and spread.
-A single run is unreadable: the baseline's own seed-to-seed top-1 range is 4.1pp
-wide. This already misled once -- a single-seed pair showed +1.78pp top-1 from
-augmentation, which a paired McNemar put at p = 0.556. Use msl/train/sweep.py;
-it prints mean, sd and min/max and refuses to summarise val. Note the ceiling:
-with 3 v 3 seeds the smallest achievable two-sided rank p is 0.1, so perfect
-separation cannot reach p < 0.05 by construction -- non-overlapping ranges are
-the strongest evidence 3 seeds can give.
+THE 0.4300 +/- 0.0120 FIGURE IS DEAD. It was the early-stopping reference and is
+not comparable to anything above. Do not quote it, and do not place it beside a
+fixed-budget number.
 
-**Next step: drop the black-separator frames from the 36 affected clips**
-(frames, not clips), then TCN, then the use_z ablation. Each at 3 seeds against
-the reference above.
+THREE SEEDS MINIMUM FOR EVERY VARIANT, reported as mean and spread. A single run
+is unreadable: the baseline's seed-to-seed top-1 range is still 4.4pp wide even
+at a fixed budget. Use msl/train/sweep.py with --max-steps 2400
+--no-early-stopping; it records the protocol in sweep_metrics.json and warns when
+run under early stopping.
+
+**Next step: the TCN, then the use_z ablation.** Each at 3 seeds on the fixed
+budget against the reference above. Separator trimming is DONE and measured: no
+effect on the mean, kept in the codebase behind
+`data.drop_separator_frames` (default false) because it is a genuine data
+correction even though it does not move the number.
 
 RUN ARTIFACTS DO NOT SURVIVE A FRESH CLONE. `runs/` and `checkpoints/` are both
 gitignored, and zero files under them are tracked, so sweep_metrics.json, the
@@ -188,6 +197,36 @@ commit its sweep_metrics.json the way the WLASL logs were committed.
   per-class F1 and every confused-pair listing names the wrong sign. Build the
   vocabulary by indexing gloss_id, never by sorting. This already occurred once in
   WlaslLandmarkDataset.glosses and was caught before the first training run.
+- EARLY STOPPING ON A 116-CLIP VAL SET CONFOUNDS EVERY VARIANT COMPARISON.
+  patience 12 at eval_every 50 is 600 steps of patience on a plateau that is
+  already noisy at 116 val clips, so the stopping step is close to arbitrary --
+  and the stopping step, not the change under test, drives the score. Evidence:
+  stopping-step range widens exactly as a change perturbs val more --
+  baseline [2050,2100,2150] range 100 -> augmentation [1550,1900,2200] range 650
+  -> separator trim [1400,1900,3600] range 2200. Stopping step against test top-1
+  gives r = 0.949 within the trim variant (n=3, indicative not conclusive) and
+  r = 0.68 across all nine early-stopped runs. ANY change that touches val --
+  trimming its frames, altering its clips -- confounds the comparison, and more
+  seeds cannot fix it: they average a confound rather than remove it.
+  A SECOND, COMPOUNDING CONFOUND: with the cosine defined over max_steps=4000,
+  runs that stopped early ended at wildly different learning rates -- lr x 0.773
+  at step 1400 versus x 0.027 at 3600, a 28-fold range. A run stopped early ends
+  hot and unannealed, which is part of why longer runs scored better.
+  THE FIX, adopted: fixed step budget, no early stopping, cosine completing at
+  the budget so every run ends annealed, and EVALUATE THE FINAL CHECKPOINT rather
+  than the best-val one. Selecting the best-val checkpoint would leave val
+  driving the comparison even with early stopping switched off.
+  Numbers produced under early stopping are NOT comparable to fixed-budget
+  numbers. The 0.4300 +/- 0.0120 reference is an early-stopping number.
+- A PREDICTION MISS WORTH REMEMBERING: separator trimming was predicted at
+  +0.8pp top-1 and came out -2.86pp. The prediction modelled the DATA change
+  (5.4% of training clips lose 31% of their frames) and ignored the PROTOCOL --
+  that the same trim also edits val, which is the stopping criterion. The data
+  effect was never measured; the protocol effect was. This is the same class of
+  error as a caveat named in prose but not carried into the arithmetic: the
+  confound was stated in the commit message for the trim and still left out of
+  the prediction. Before predicting a delta, ask what the change does to the
+  measurement apparatus, not only to the data.
 - Known limitations to restate wherever WLASL numbers appear: (a) signer_id
   reliability is unverified and the split is only as good as those labels, WLASL
   aggregating 8 separate dictionary sites; (b) WLASL is citation-form dictionary

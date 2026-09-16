@@ -64,8 +64,13 @@ def run_seed(
     result = train(cfg, device=device, vocab=vocab, verbose=False,
                    loaders=(train_loader, val_loader))
 
+    # With early stopping off, evaluate the FINAL model. Picking the best-val
+    # checkpoint would put val back in charge of the comparison -- the exact
+    # confound the fixed budget exists to remove.
+    checkpoint = (result.best_checkpoint if cfg.train.early_stopping
+                  else result.last_checkpoint)
     model = build_model(cfg, num_classes=len(vocab)).to(device)
-    ckpt = load_checkpoint(result.best_checkpoint, map_location=str(device))
+    ckpt = load_checkpoint(checkpoint, map_location=str(device))
     model.load_state_dict(ckpt["model"])
     if ckpt["glosses"] != vocab.glosses:
         raise SystemExit("checkpoint vocabulary does not match the split CSV")
@@ -113,11 +118,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-dir", type=Path, required=True)
     parser.add_argument("--arch", default=None,
                         choices=["transformer", "bilstm", "tcn", "stgcn"])
+    parser.add_argument("--max-steps", type=int, default=None,
+                        help="fixed step budget; the cosine completes here")
+    parser.add_argument("--no-early-stopping", action="store_true",
+                        help="train the full budget and evaluate the FINAL "
+                             "checkpoint -- required for variant comparisons")
     args = parser.parse_args(argv)
 
     cfg = ExperimentConfig.from_yaml(args.config)
     if args.arch:
         cfg = replace(cfg, model=replace(cfg.model, arch=args.arch))
+    overrides = {}
+    if args.max_steps is not None:
+        overrides["max_steps"] = args.max_steps
+    if args.no_early_stopping:
+        overrides["early_stopping"] = False
+    if overrides:
+        cfg = replace(cfg, train=replace(cfg.train, **overrides))
     device = resolve_device(args.device)
     label = args.label or args.config.stem
 
@@ -126,7 +143,17 @@ def main(argv: list[str] | None = None) -> int:
     print(CAVEAT)
     print("=" * 74)
     print(f"arch {cfg.model.arch}   augmentation "
-          f"{'ON' if cfg.augment.enabled else 'OFF'}   use_z {cfg.feature.use_z}")
+          f"{'ON' if cfg.augment.enabled else 'OFF'}   use_z {cfg.feature.use_z}"
+          f"   separator trim {cfg.data.drop_separator_frames}")
+    protocol = ("early stopping (patience "
+                f"{cfg.train.patience}), best-val checkpoint"
+                if cfg.train.early_stopping else
+                f"FIXED BUDGET {cfg.train.max_steps} steps, no early stopping, "
+                "final checkpoint")
+    print(f"protocol: {protocol}")
+    if cfg.train.early_stopping:
+        print("  WARNING: early-stopping numbers are not comparable to "
+              "fixed-budget numbers")
     print(f"device: {describe_device(device)}\n", flush=True)
 
     per_seed: list[dict] = []
@@ -175,6 +202,15 @@ def main(argv: list[str] | None = None) -> int:
         "arch": cfg.model.arch,
         "use_z": cfg.feature.use_z,
         "augmentation": (vars(cfg.augment) if cfg.augment.enabled else None),
+        "protocol": {
+            "early_stopping": cfg.train.early_stopping,
+            "max_steps": cfg.train.max_steps,
+            "patience": cfg.train.patience if cfg.train.early_stopping else None,
+            "checkpoint": "best_val" if cfg.train.early_stopping else "final",
+            "comparable_to": ("early-stopping runs only"
+                              if cfg.train.early_stopping
+                              else f"fixed-budget {cfg.train.max_steps}-step runs only"),
+        },
         "seeds": args.seeds,
         "per_seed": per_seed,
         "aggregate": agg,

@@ -169,7 +169,8 @@ def train(
                 result.best_checkpoint = best_path
             else:
                 evals_without_improvement += 1
-                if evals_without_improvement >= cfg.train.patience:
+                if (cfg.train.early_stopping
+                        and evals_without_improvement >= cfg.train.patience):
                     if verbose:
                         print(f"early stopping at step {step + 1} (val top-1 plateaued)")
                     break

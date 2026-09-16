@@ -1,0 +1,79 @@
+{
+  "label": "baseline (no augmentation)",
+  "language": "American Sign Language (WLASL100)",
+  "corpus_completeness": "55.3% (1127 of 2038 clips)",
+  "arch": "transformer",
+  "use_z": true,
+  "augmentation": null,
+  "protocol": {
+    "early_stopping": false,
+    "max_steps": 2400,
+    "patience": null,
+    "checkpoint": "final",
+    "comparable_to": "fixed-budget 2400-step runs only"
+  },
+  "seeds": [
+    1234,
+    2345,
+    3456
+  ],
+  "per_seed": [
+    {
+      "seed": 1234,
+      "test_top1": 0.4112,
+      "test_top5": 0.7101,
+      "test_macro_f1": 0.3898,
+      "steps_run": 2400
+    },
+    {
+      "seed": 2345,
+      "test_top1": 0.4083,
+      "test_top5": 0.7041,
+      "test_macro_f1": 0.3832,
+      "steps_run": 2400
+    },
+    {
+      "seed": 3456,
+      "test_top1": 0.4527,
+      "test_top5": 0.6805,
+      "test_macro_f1": 0.4264,
+      "steps_run": 2400
+    }
+  ],
+  "aggregate": {
+    "test_top1": {
+      "mean": 0.4241,
+      "sd": 0.0248,
+      "min": 0.4083,
+      "max": 0.4527,
+      "values": [
+        0.4112,
+        0.4083,
+        0.4527
+      ]
+    },
+    "test_top5": {
+      "mean": 0.6982,
+      "sd": 0.0156,
+      "min": 0.6805,
+      "max": 0.7101,
+      "values": [
+        0.7101,
+        0.7041,
+        0.6805
+      ]
+    },
+    "test_macro_f1": {
+      "mean": 0.3998,
+      "sd": 0.0233,
+      "min": 0.3832,
+      "max": 0.4264,
+      "values": [
+        0.3898,
+        0.3832,
+        0.4264
+      ]
+    }
+  },
+  "note": "val accuracy deliberately absent: signer-dependent, stopping criterion only"
+}
