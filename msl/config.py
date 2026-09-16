@@ -27,10 +27,19 @@ class FeatureConfig:
     # its raw scale, which is the condition spec S4.3 measured as harmful. The
     # value is a FITTED PARAMETER and must be fitted on the training split only.
     z_scale: float | None = None
+    # Keep z for these landmark blocks only ("pose", "left_hand", "right_hand",
+    # "face"); None means the uniform use_z layout. Set this and z is selected
+    # per block AFTER augmentation, so the augmentation invariants -- which
+    # assume a uniform coordinate count -- are never exercised on a mixed layout.
+    z_blocks: tuple[str, ...] | None = None
     seq_len: int = 64  # every clip is resampled to this many frames
 
     @property
     def n_features(self) -> int:
+        if self.z_blocks is not None:
+            from msl.data.landmarks import feature_dim_for
+
+            return feature_dim_for(tuple(self.z_blocks))
         return feature_dim(self.use_z)
 
 

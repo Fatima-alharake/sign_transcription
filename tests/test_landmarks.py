@@ -173,3 +173,101 @@ def test_scale_z_does_not_mutate_its_input():
     before = f.copy()
     lm.scale_z(f, 0.5)
     np.testing.assert_array_equal(f, before)
+
+
+def _wide(n=5, seed=3):
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    rng = np.random.default_rng(seed)
+    f = rng.normal(0.3, 0.4, size=(n, lm.feature_dim(True))).astype(np.float32)
+    f[:, lm.visibility_slice(True)] = [1.0, 0.0]
+    return f
+
+
+def test_feature_dim_for_matches_the_block_layout():
+    from msl.data import landmarks as lm
+
+    assert lm.feature_dim_for(()) == lm.feature_dim(False) == 184
+    assert lm.feature_dim_for(("pose",)) == 199
+    assert lm.feature_dim_for(("left_hand", "right_hand")) == 226
+    assert lm.feature_dim_for(tuple(lm.Z_BLOCK_NAMES)) == lm.feature_dim(True) == 275
+    assert lm.feature_dim_for(None) == lm.feature_dim(True)
+
+
+def test_feature_dim_for_rejects_an_unknown_block():
+    import pytest
+
+    from msl.data import landmarks as lm
+
+    with pytest.raises(KeyError, match="unknown feature block"):
+        lm.feature_dim_for(("torso",))
+
+
+def test_select_no_blocks_equals_drop_z():
+    """The empty selection must be exactly the use_z=False layout."""
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = _wide()
+    np.testing.assert_allclose(lm.select_z_blocks(f, ()), lm.drop_z(f), atol=0)
+
+
+def test_select_all_blocks_is_the_identity():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = _wide()
+    np.testing.assert_allclose(
+        lm.select_z_blocks(f, tuple(lm.Z_BLOCK_NAMES)), f, atol=0
+    )
+
+
+def test_pose_z_only_keeps_pose_depth_and_drops_hand_depth():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = _wide()
+    out = lm.select_z_blocks(f, ("pose",))
+    assert out.shape[1] == lm.feature_dim_for(("pose",))
+    coords = f[:, : lm.N_LANDMARKS * 3].reshape(f.shape[0], lm.N_LANDMARKS, 3)
+    # pose block occupies the first N_POSE landmarks and keeps all three coords
+    np.testing.assert_allclose(
+        out[:, : lm.N_POSE * 3].reshape(f.shape[0], lm.N_POSE, 3),
+        coords[:, : lm.N_POSE, :], atol=0,
+    )
+    # the next block is the left hand, now two coords per landmark
+    hand = out[:, lm.N_POSE * 3: lm.N_POSE * 3 + lm.N_HAND_LANDMARKS * 2]
+    np.testing.assert_allclose(
+        hand.reshape(f.shape[0], lm.N_HAND_LANDMARKS, 2),
+        coords[:, lm.N_POSE: lm.N_POSE + lm.N_HAND_LANDMARKS, :2], atol=0,
+    )
+
+
+def test_select_preserves_visibility_flags_last():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = _wide()
+    for keep in ((), ("pose",), ("left_hand", "right_hand")):
+        out = lm.select_z_blocks(f, keep)
+        np.testing.assert_allclose(out[:, -2:], f[:, lm.visibility_slice(True)], atol=0)
+
+
+def test_select_keeps_zeroed_blocks_zero():
+    import numpy as np
+
+    from msl.data import landmarks as lm
+
+    f = _wide()
+    f[:, lm.block_slice("left_hand", True)] = 0.0
+    for keep in ((), ("pose",), ("left_hand",)):
+        out = lm.select_z_blocks(f, keep)
+        start = lm.N_POSE * (3 if "pose" in keep else 2)
+        width = lm.N_HAND_LANDMARKS * (3 if "left_hand" in keep else 2)
+        assert np.all(out[:, start:start + width] == 0.0)

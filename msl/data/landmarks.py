@@ -202,6 +202,62 @@ def scale_z(features, factor: float):
     return out
 
 
+Z_BLOCK_NAMES: Final[tuple[str, ...]] = tuple(name for name, _ in FEATURE_LAYOUT)
+
+
+def feature_dim_for(keep_z: tuple[str, ...] | None) -> int:
+    """Per-frame width when z is kept for `keep_z` blocks only.
+
+    `None` means every block keeps z (the full 275). An empty tuple means none
+    do, which is the same 184 as use_z=False.
+    """
+    if keep_z is None:
+        return feature_dim(True)
+    unknown = set(keep_z) - set(Z_BLOCK_NAMES)
+    if unknown:
+        raise KeyError(f"unknown feature block(s): {sorted(unknown)}")
+    return sum(
+        count * (3 if name in keep_z else 2) for name, count in FEATURE_LAYOUT
+    ) + N_VISIBILITY_CHANNELS
+
+
+def select_z_blocks(features, keep_z: tuple[str, ...]):
+    """Keep z for some landmark blocks and drop it for the rest.
+
+    Tests whether MediaPipe's z is usable for the body while being noise for the
+    hands, whose depth is inferred from a 2D image with weak priors. That is a
+    HYPOTHESIS this function exists to measure, not a mechanism to assume.
+
+    Applied AFTER augmentation, never before. `augment_sequence` assumes a
+    uniform coordinate count per landmark, which a mixed 2-and-3 layout breaks;
+    running it on the full uniform tensor first keeps those invariants and their
+    tests untouched. Nothing is lost by the ordering: rotation about the camera
+    axis never mixes z into x or y, scaling is uniform, and per-joint noise is
+    independent per coordinate, so the surviving x and y are exactly what they
+    would have been.
+    """
+    import numpy as np
+
+    features = np.asarray(features)
+    wide = feature_dim(True)
+    if features.shape[-1] != wide:
+        raise ValueError(
+            f"expected a use_z=True tensor of width {wide}, got {features.shape[-1]}"
+        )
+    n_frames = features.shape[0]
+    coords = features[:, : N_LANDMARKS * 3].reshape(n_frames, N_LANDMARKS, 3)
+
+    parts = []
+    offset = 0
+    for name, count in FEATURE_LAYOUT:
+        block = coords[:, offset:offset + count, :]
+        parts.append(block.reshape(n_frames, count * 3) if name in keep_z
+                     else block[:, :, :2].reshape(n_frames, count * 2))
+        offset += count
+    parts.append(features[:, visibility_slice(True)])
+    return np.concatenate(parts, axis=1).astype(features.dtype, copy=False)
+
+
 def visibility_slice(use_z: bool = True) -> slice:
     """Slice selecting the two trailing per-hand visibility scalars."""
     total = feature_dim(use_z)

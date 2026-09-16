@@ -464,10 +464,20 @@ class WlaslLandmarkDataset:
         row = self.rows[index]
         features = np.load(row["cache"], mmap_mode="r")
         sequence = np.asarray(features)
+        # A per-block z run keeps the full uniform tensor through augmentation
+        # and narrows afterwards -- see landmarks.select_z_blocks.
+        per_block = self.cfg.feature.z_blocks is not None
+        if per_block and sequence.shape[1] != lm.feature_dim(True):
+            raise ValueError(
+                f"z_blocks needs a use_z=True cache tensor, got width "
+                f"{sequence.shape[1]} for {row['video_id']}"
+            )
         # The cache holds use_z=True tensors. A use_z=False run slices them
         # rather than re-extracting: the two are exactly equivalent because the
         # normalisation origin and scale never depend on z.
-        if not self.cfg.feature.use_z and sequence.shape[1] == lm.feature_dim(True):
+        if per_block:
+            pass  # narrowing happens after augmentation, below
+        elif not self.cfg.feature.use_z and sequence.shape[1] == lm.feature_dim(True):
             sequence = lm.drop_z(sequence)
         elif self.cfg.feature.use_z and self.cfg.feature.z_scale is not None:
             sequence = lm.scale_z(sequence, self.cfg.feature.z_scale)
@@ -485,6 +495,8 @@ class WlaslLandmarkDataset:
             sequence = augment_sequence(
                 sequence, self._aug, self.cfg.feature.use_z, self._rng
             )
+        if per_block:
+            sequence = lm.select_z_blocks(sequence, tuple(self.cfg.feature.z_blocks))
         window = resample(sequence, self.cfg.feature.seq_len)
         return torch.from_numpy(window), int(row["gloss_id"])
 
