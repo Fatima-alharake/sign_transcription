@@ -83,3 +83,18 @@ data/*
 data/wlasl/*
 !data/wlasl/extract_log_firstpass.csv
 !data/wlasl/download_log_100.csv
+
+# ---------------------------------------------------------------------------
+# Sweep metrics, and only those. Same parent-directory rule as the data logs:
+# `runs/` above excludes the tree, so a `!` rule cannot reach into it. The idiom
+# is to re-include the DIRECTORIES (a trailing slash matches directories only)
+# so git descends, then whitelist the one filename.
+#
+# sweep_metrics.json is small text whose history is the point -- it is the
+# record of what each variant scored at each seed. Checkpoints, figures and
+# .npy confusion matrices stay ignored: reproducible bulk.
+# ---------------------------------------------------------------------------
+!runs/
+runs/**
+!runs/**/
+!**/sweep_metrics.json
