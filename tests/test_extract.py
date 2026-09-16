@@ -433,13 +433,18 @@ def test_cache_key_tracks_file_content_not_path(tmp_path) -> None:
     assert cache_key(a, feature) != cache_key(c, feature)
 
 
-def test_cache_key_separates_incompatible_feature_configs(tmp_path) -> None:
-    """A use_z=False run must not be served a use_z=True tensor: the shapes
-    differ, and the mismatch might not surface until training."""
+def test_cache_key_ignores_use_z_because_the_cache_stores_the_superset(tmp_path) -> None:
+    """One cache entry per clip, not one per consumption setting.
+
+    The cache always stores z; a use_z=False run narrows at load time via
+    landmarks.drop_z. Keying on use_z would mean the default flip to False
+    invalidated every existing cache file and forced hours of re-extraction to
+    produce strictly less data than is already on disk.
+    """
     video = _write(tmp_path / "clip.mp4", b"bytes")
-    with_z = cache_key(video, FeatureConfig(use_z=True))
-    without_z = cache_key(video, FeatureConfig(use_z=False))
-    assert with_z != without_z
+    assert cache_key(video, FeatureConfig(use_z=True)) == cache_key(
+        video, FeatureConfig(use_z=False)
+    )
 
 
 def test_cache_path_lands_under_the_configured_root(tmp_path) -> None:

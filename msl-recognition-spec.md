@@ -79,6 +79,36 @@ Normalisation, applied per frame, in this order:
 2. Scale by inter-shoulder distance, so the model is invariant to distance from camera. Compute this divisor from x and y only — including the unreliable z channel (§4.3) would corrupt x and y as well, not merely z.
 3. Keep x, y, z; z is unreliable in MediaPipe but adds some depth cue — make it a config flag so I can ablate it.
 
+**§4.3 UPDATED FROM MEASUREMENT. `use_z` now defaults to `false`.** The ablation
+was run on WLASL100 (American Sign Language, 55.3%-complete corpus, 3 seeds,
+fixed 2400-step budget, signer-disjoint test): dropping z gives **+7.10pp top-1
+on the transformer and +11.34pp on the TCN**, with non-overlapping seed ranges
+on both. It is the largest effect measured in the project.
+
+**Why it is harmful matters, because it is not "z carries no information".**
+z is harmful because it is **unscaled relative to x and y**:
+
+- z is 91 of 275 features — **33.1% of the per-frame vector**.
+- Its mean absolute magnitude in the cached tensors is **1.5× that of x and y**.
+- That is a direct consequence of §4.2, which — correctly — computes the
+  inter-shoulder divisor from x and y only, since letting the unreliable z into
+  the divisor would corrupt every coordinate rather than just the z channel.
+  The divisor is therefore not z's natural scale, and z is left larger than the
+  signal it accompanies.
+
+So a third of the input is **loud** noise, dominating the linear input
+projection, rather than quiet noise the model could learn to ignore. The
+distinction is actionable: if the problem were "z is meaningless", the only
+remedy would be to discard it. Because the problem is scale, **scaling z is
+worth testing** — a rescaled z could recover whatever depth cue is genuinely
+there without swamping x and y.
+
+Storage is a separate decision from consumption. **The landmark cache always
+stores z** (`extract.CACHE_USE_Z`) and `use_z` is applied when loading: a cached
+tensor with z can always be narrowed, while one without z can only be restored
+by re-running MediaPipe over the whole corpus. `cache_key` therefore ignores
+`use_z`, so changing the flag never invalidates the cache.
+
 **Aspect ratio must be recorded per clip in the manifest, and applied from the live frame dimensions at inference.** Training on 16:9 clips and inferring from a 4:3 webcam without re-deriving the correction reintroduces exactly this distortion at the point where it is hardest to notice. `realtime.py` must read the actual camera resolution rather than assuming the training aspect.
 
 Handle missing hands: MediaPipe returns nothing when a hand leaves frame. Emit zeros **plus a per-hand visibility mask channel** so the model can distinguish "hand absent" from "hand at origin".

@@ -15,7 +15,14 @@ from msl.data.landmarks import feature_dim
 class FeatureConfig:
     """Shape of the per-frame landmark vector."""
 
-    use_z: bool = True
+    # DEFAULT FALSE, from measurement (spec S4.3): dropping z is the largest
+    # effect measured on WLASL100 -- +7.10pp top-1 on the transformer, +11.34pp
+    # on the TCN, non-overlapping ranges on both. z is not merely uninformative,
+    # it is UNSCALED: 33.1% of the feature vector at 1.5x the magnitude of x and
+    # y, because S4.2 correctly excludes it from the inter-shoulder divisor.
+    # The landmark cache still stores z regardless (extract.CACHE_USE_Z); this
+    # flag only decides whether training consumes it.
+    use_z: bool = False
     seq_len: int = 64  # every clip is resampled to this many frames
 
     @property

@@ -3,7 +3,7 @@
 # the labels are random. It exists to prove the plumbing.
 
 feature:
-  use_z: true          # set false to ablate the unreliable MediaPipe z channel
+  use_z: false        # spec S4.3: z is unscaled and harmful; measured
   seq_len: 64
 
 model:

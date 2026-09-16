@@ -18,7 +18,7 @@ data:
   drop_separator_frames: true
 
 feature:
-  use_z: true
+  use_z: false        # spec S4.3: z is unscaled and harmful; measured
   seq_len: 64
 
 model:

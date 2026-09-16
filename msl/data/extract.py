@@ -290,6 +290,20 @@ def file_digest(path: str | Path, chunk_size: int = 1 << 20) -> str:
     return digest.hexdigest()
 
 
+# THE LANDMARK CACHE ALWAYS STORES z, whatever `FeatureConfig.use_z` says.
+#
+# z is harmful to train on (see spec S4.3) and `use_z` now defaults to False,
+# but that is a CONSUMPTION decision, not a storage one. A cached tensor with z
+# can always be narrowed by `landmarks.drop_z`; a tensor without z can never
+# have it restored except by re-running MediaPipe over the whole corpus. The
+# cache is therefore the superset and `use_z` is applied at load time.
+#
+# This also keeps `cache_key` independent of `use_z`, which is what stops the
+# default flip from silently invalidating all 1127 existing WLASL100 cache
+# files and triggering hours of re-extraction to produce strictly less data.
+CACHE_USE_Z: bool = True
+
+
 def cache_key(
     path: str | Path,
     feature: FeatureConfig,
@@ -298,9 +312,12 @@ def cache_key(
     """Cache filename stem for a video (or one segment of it).
 
     Keyed on the video's *content* (spec S4) and on the settings that change the
-    output shape. Keying on the path alone would serve stale tensors after a
-    re-record; keying on content alone would serve a use_z=True tensor to a
-    use_z=False run, where the shape mismatch might not surface until training.
+    stored output. Keying on the path alone would serve stale tensors after a
+    re-record.
+
+    `use_z` is deliberately NOT part of this key: the cache always stores z
+    (see CACHE_USE_Z above) and consumers narrow at load time, so there is one
+    cache entry per clip rather than one per consumption setting.
 
     `segment` is the 1-based inclusive frame range, and it is **not optional for
     a trimmed corpus**. WLASL cuts several signs from a single compilation
@@ -311,7 +328,7 @@ def cache_key(
     file with at least one other clip, so this is not a corner case.
     """
     fingerprint = json.dumps(
-        {"v": EXTRACTOR_VERSION, "use_z": feature.use_z, "segment": segment},
+        {"v": EXTRACTOR_VERSION, "use_z": CACHE_USE_Z, "segment": segment},
         sort_keys=True,
     )
     suffix = hashlib.sha256(fingerprint.encode()).hexdigest()[:8]
@@ -512,7 +529,7 @@ def extract_video(
         fps=fps,
         width=width,
         height=height,
-        use_z=feature.use_z,
+        use_z=CACHE_USE_Z,  # store the superset; consumers narrow at load time
         min_shoulder_distance=data.min_shoulder_distance,
     )
 
