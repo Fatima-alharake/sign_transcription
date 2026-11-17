@@ -426,6 +426,29 @@ class LandmarkExtractor:
             )
         return points[list(indices)]
 
+    def detect_rgb_frame(self, rgb: np.ndarray, timestamp_ms: int) -> FrameLandmarks:
+        """Detect this RGB frame; timestamps must increase in VIDEO mode."""
+        if self._landmarker is None:
+            raise RuntimeError("use LandmarkExtractor as a context manager")
+        if rgb.dtype != np.uint8 or rgb.ndim != 3 or rgb.shape[2] != 3:
+            raise ValueError("rgb must be a uint8 array with shape (height, width, 3)")
+        if timestamp_ms < 0:
+            raise ValueError("timestamp_ms must be non-negative")
+
+        import mediapipe as mp
+
+        image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=np.ascontiguousarray(rgb),
+        )
+        result = self._landmarker.detect_for_video(image, timestamp_ms)
+        return FrameLandmarks(
+            pose=self._select(result.pose_landmarks, lm.POSE_INDICES),
+            left_hand=self._select(result.left_hand_landmarks, None),
+            right_hand=self._select(result.right_hand_landmarks, None),
+            face=self._select(result.face_landmarks, lm.FACE_INDICES),
+        )
+
     def frames(
         self,
         video_path: str | Path,
@@ -449,7 +472,6 @@ class LandmarkExtractor:
 
         if self._landmarker is None:
             raise RuntimeError("use LandmarkExtractor as a context manager")
-        import mediapipe as mp
 
         capture = cv2.VideoCapture(str(video_path))
         if not capture.isOpened():
@@ -464,19 +486,9 @@ class LandmarkExtractor:
                 ok, bgr = capture.read()
                 if not ok:
                     break
-                image = mp.Image(
-                    image_format=mp.ImageFormat.SRGB,
-                    data=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB),
-                )
-                # Timestamps must increase monotonically in VIDEO mode.
-                result = self._landmarker.detect_for_video(
-                    image, int(index / fps * 1000)
-                )
-                yield FrameLandmarks(
-                    pose=self._select(result.pose_landmarks, lm.POSE_INDICES),
-                    left_hand=self._select(result.left_hand_landmarks, None),
-                    right_hand=self._select(result.right_hand_landmarks, None),
-                    face=self._select(result.face_landmarks, lm.FACE_INDICES),
+                yield self.detect_rgb_frame(
+                    cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB),
+                    int(index / fps * 1000),
                 )
                 index += 1
         finally:

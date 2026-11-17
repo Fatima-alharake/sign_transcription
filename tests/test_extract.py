@@ -475,6 +475,14 @@ def test_missing_model_asset_names_the_file_and_the_fix(tmp_path) -> None:
     assert HOLISTIC_MODEL_URL in message
 
 
+def test_live_frame_detection_requires_an_open_extractor() -> None:
+    from msl.data.extract import LandmarkExtractor
+
+    extractor = LandmarkExtractor()
+    with pytest.raises(RuntimeError, match="context manager"):
+        extractor.detect_rgb_frame(np.zeros((8, 8, 3), dtype=np.uint8), 0)
+
+
 def test_save_cached_is_atomic_and_leaves_no_temp_file(tmp_path) -> None:
     clip = pack_clip([physical_frame()], fps=30.0, width=640, height=480)
     destination = save_cached(clip, tmp_path / "nested" / "clip.npy")
