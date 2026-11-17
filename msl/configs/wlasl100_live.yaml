@@ -1,0 +1,39 @@
+# Isolated WLASL100 ASL classifier for the webcam demo.
+feature:
+  use_z: false
+  seq_len: 64
+
+model:
+  arch: transformer
+  d_model: 128
+  n_layers: 4
+  n_heads: 4
+  ffn_dim: 256
+  dropout: 0.3
+  tcn_kernel_size: 5
+
+train:
+  batch_size: 32
+  lr: 0.001
+  weight_decay: 0.01
+  max_steps: 2400
+  warmup_steps: 200
+  label_smoothing: 0.1
+  grad_clip: 1.0
+  eval_every: 50
+  patience: 12
+  early_stopping: false
+  seed: 1234
+  num_workers: 0
+  out_dir: checkpoints/wlasl100_live
+  log_dir: runs/wlasl100_live
+  tensorboard: false
+
+data:
+  data_root: data/wlasl_live
+
+synthetic:
+  n_train: 128
+  n_val: 32
+  num_classes: 100
+  seed: 0
