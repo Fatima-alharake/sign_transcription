@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
@@ -22,6 +22,160 @@ from msl.runtime import resolve_device
 class SignPrediction:
     gloss: str
     confidence: float
+
+
+class MotionGate:
+    """Detects whether signer is actively executing hand gestures or resting."""
+
+    def __init__(
+        self,
+        *,
+        motion_threshold: float = 0.008,
+        min_active_frames: int = 2,
+        idle_frames_threshold: int = 8,
+    ) -> None:
+        if motion_threshold <= 0:
+            raise ValueError("motion_threshold must be positive")
+        self.motion_threshold = motion_threshold
+        self.min_active_frames = min_active_frames
+        self.idle_frames_threshold = idle_frames_threshold
+
+        self.last_left_hand: np.ndarray | None = None
+        self.last_right_hand: np.ndarray | None = None
+        self.consecutive_active: int = 0
+        self.consecutive_idle: int = 0
+        self.is_active: bool = False
+        self.current_energy: float = 0.0
+
+    def update(self, frame: FrameLandmarks) -> bool:
+        """Update motion detector with the current frame and return whether signing is active."""
+        displacements: list[float] = []
+
+        if frame.left_hand is not None and self.last_left_hand is not None:
+            diff = frame.left_hand[:, :2] - self.last_left_hand[:, :2]
+            dist = np.linalg.norm(diff, axis=1).mean()
+            displacements.append(float(dist))
+
+        if frame.right_hand is not None and self.last_right_hand is not None:
+            diff = frame.right_hand[:, :2] - self.last_right_hand[:, :2]
+            dist = np.linalg.norm(diff, axis=1).mean()
+            displacements.append(float(dist))
+
+        self.last_left_hand = frame.left_hand.copy() if frame.left_hand is not None else None
+        self.last_right_hand = frame.right_hand.copy() if frame.right_hand is not None else None
+
+        has_hands = (frame.left_hand is not None or frame.right_hand is not None)
+        if not has_hands:
+            instant_energy = 0.0
+        elif displacements:
+            instant_energy = max(displacements)
+        else:
+            # Hands appeared freshly in this frame
+            instant_energy = self.motion_threshold * 1.5
+
+        # Exponential moving average smoothing for energy display
+        self.current_energy = 0.5 * self.current_energy + 0.5 * instant_energy
+
+        is_moving_now = has_hands and instant_energy >= self.motion_threshold
+        if is_moving_now:
+            self.consecutive_active += 1
+            self.consecutive_idle = 0
+            if self.consecutive_active >= self.min_active_frames:
+                self.is_active = True
+        else:
+            self.consecutive_idle += 1
+            self.consecutive_active = 0
+            if self.consecutive_idle >= self.idle_frames_threshold:
+                self.is_active = False
+
+        return self.is_active
+
+
+class SubtitleAccumulator:
+    """Debounces top sign predictions into a running subtitle sentence."""
+
+    def __init__(
+        self,
+        *,
+        min_confidence: float = 0.40,
+        confirm_count: int = 2,
+        cooldown_seconds: float = 1.2,
+        idle_timeout_seconds: float = 5.0,
+        max_words: int = 7,
+    ) -> None:
+        if min_confidence <= 0.0 or min_confidence > 1.0:
+            raise ValueError("min_confidence must be in (0, 1]")
+        if confirm_count < 1:
+            raise ValueError("confirm_count must be at least 1")
+        if cooldown_seconds < 0:
+            raise ValueError("cooldown_seconds must be non-negative")
+        if idle_timeout_seconds <= 0:
+            raise ValueError("idle_timeout_seconds must be positive")
+
+        self.min_confidence = min_confidence
+        self.confirm_count = confirm_count
+        self.cooldown_seconds = cooldown_seconds
+        self.idle_timeout_seconds = idle_timeout_seconds
+        self.max_words = max_words
+
+        self.words: list[str] = []
+        self._pending_candidate: str | None = None
+        self._pending_count: int = 0
+        self._last_committed_word: str | None = None
+        self._last_committed_time: float = 0.0
+        self._last_active_time: float = 0.0
+
+    def update(
+        self,
+        predictions: list[SignPrediction] | None,
+        is_active: bool,
+        current_time: float,
+    ) -> str | None:
+        """Process predictions and return a newly committed word, if any."""
+        if is_active:
+            self._last_active_time = current_time
+            if predictions:
+                top = predictions[0]
+                if top.confidence >= self.min_confidence:
+                    if top.gloss == self._pending_candidate:
+                        self._pending_count += 1
+                    else:
+                        self._pending_candidate = top.gloss
+                        self._pending_count = 1
+
+                    if self._pending_count >= self.confirm_count:
+                        time_since_commit = current_time - self._last_committed_time
+                        is_different_sign = (self._pending_candidate != self._last_committed_word)
+                        if is_different_sign or time_since_commit >= self.cooldown_seconds:
+                            committed = self._pending_candidate
+                            self.words.append(committed)
+                            if len(self.words) > self.max_words:
+                                self.words.pop(0)
+                            self._last_committed_word = committed
+                            self._last_committed_time = current_time
+                            self._pending_candidate = None
+                            self._pending_count = 0
+                            return committed
+                else:
+                    self._pending_candidate = None
+                    self._pending_count = 0
+        else:
+            self._pending_candidate = None
+            self._pending_count = 0
+            if self.words and (current_time - self._last_active_time >= self.idle_timeout_seconds):
+                self.clear()
+
+        return None
+
+    def clear(self) -> None:
+        self.words.clear()
+        self._pending_candidate = None
+        self._pending_count = 0
+        self._last_committed_word = None
+
+    def get_text(self) -> str:
+        return "  ".join(self.words)
+
 
 
 def prepare_window(
