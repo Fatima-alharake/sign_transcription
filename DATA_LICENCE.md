@@ -39,7 +39,7 @@ judgement rather than a plain reading, that is said below rather than hidden.
 | `msl/data/splits/*.csv` — split assignments (video_id, gloss, gloss_id, signer_id, split) | **yes** | See "the split CSVs" below. |
 | `msl/data/splits/wlasl100_separator_trims.csv` — frame ranges to keep | **yes** | Frame indices and counts; derived measurements, no landmark or pixel content. |
 | `data/wlasl/download_log_100.csv`, `extract_log_firstpass.csv` | **yes** | Per-clip resolution, fps, frame counts, URLs, HTTP status. Measurements about the Data, not the Data. |
-| `runs/sweeps/*/sweep_metrics.json` — accuracy numbers | **yes** | Results. |
+| `checkpoints/` — model checkpoints & ONNX weights | **yes** | Results / trained weights. |
 | Raw video (`data/wlasl/raw_videos/`) | **no** | Data. Gitignored. |
 | Landmark cache (`data/landmark_cache/*.npy`) | **no** | See "the landmark cache" below — the cautious call. |
 | Trained checkpoints (`checkpoints/`) | **not currently** | Permitted as Results; excluded for size, not licensing. |
