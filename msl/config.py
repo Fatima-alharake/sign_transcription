@@ -23,6 +23,7 @@ class FeatureConfig:
     # The landmark cache still stores z regardless (extract.CACHE_USE_Z); this
     # flag only decides whether training consumes it.
     use_z: bool = False
+    use_velocity: bool = False
     # Multiplier applied to the z channel when use_z is True. None leaves z at
     # its raw scale, which is the condition spec S4.3 measured as harmful. The
     # value is a FITTED PARAMETER and must be fitted on the training split only.
@@ -39,8 +40,11 @@ class FeatureConfig:
         if self.z_blocks is not None:
             from msl.data.landmarks import feature_dim_for
 
-            return feature_dim_for(tuple(self.z_blocks))
-        return feature_dim(self.use_z)
+            base = feature_dim_for(tuple(self.z_blocks))
+            return base + (base - 2) if self.use_velocity else base
+        from msl.data.landmarks import feature_dim_with_velocity
+
+        return feature_dim_with_velocity(self.use_z, self.use_velocity)
 
 
 @dataclass(frozen=True)

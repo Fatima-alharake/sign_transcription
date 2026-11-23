@@ -264,6 +264,34 @@ def visibility_slice(use_z: bool = True) -> slice:
     return slice(total - N_VISIBILITY_CHANNELS, total)
 
 
+def feature_dim_with_velocity(use_z: bool = True, use_velocity: bool = False) -> int:
+    base = feature_dim(use_z)
+    if not use_velocity:
+        return base
+    return base + (base - N_VISIBILITY_CHANNELS)
+
+
+def append_velocity(sequence, use_z: bool = False):
+    import numpy as np
+
+    seq = np.asarray(sequence)
+    c = coords_per_landmark(use_z)
+    coord_dim = N_LANDMARKS * c
+    if seq.shape[-1] < coord_dim + N_VISIBILITY_CHANNELS:
+        raise ValueError(
+            f"sequence feature width {seq.shape[-1]} too small for {coord_dim} coordinates"
+        )
+    coords = seq[:, :coord_dim]
+    visibility = seq[:, coord_dim:]
+
+    vel = np.zeros_like(coords)
+    if coords.shape[0] > 1:
+        vel[1:] = coords[1:] - coords[:-1]
+        vel[0] = vel[1]
+
+    return np.concatenate([coords, vel, visibility], axis=1).astype(seq.dtype, copy=False)
+
+
 # --- Drawing topology ------------------------------------------------------
 # Skeleton edges for the overlay renderer (spec S10.1, and the live preview in
 # S4a). Expressed as positions *within our kept subsets*, never as raw MediaPipe

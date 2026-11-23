@@ -271,3 +271,34 @@ def test_select_keeps_zeroed_blocks_zero():
         start = lm.N_POSE * (3 if "pose" in keep else 2)
         width = lm.N_HAND_LANDMARKS * (3 if "left_hand" in keep else 2)
         assert np.all(out[:, start:start + width] == 0.0)
+
+
+def test_feature_dim_with_velocity() -> None:
+    assert lm.feature_dim_with_velocity(use_z=False, use_velocity=False) == 184
+    assert lm.feature_dim_with_velocity(use_z=False, use_velocity=True) == 184 + 182
+    assert lm.feature_dim_with_velocity(use_z=True, use_velocity=False) == 275
+    assert lm.feature_dim_with_velocity(use_z=True, use_velocity=True) == 275 + 273
+
+
+def test_append_velocity_computes_differences_and_preserves_visibility() -> None:
+    import numpy as np
+
+    t = 4
+    dim = lm.feature_dim(use_z=False)
+    seq = np.zeros((t, dim), dtype=np.float32)
+    for i in range(t):
+        seq[i, :182] = (i + 1) * 2.0
+    seq[:, -2] = 1.0
+    seq[:, -1] = 0.0
+
+    out = lm.append_velocity(seq, use_z=False)
+    assert out.shape == (t, lm.feature_dim_with_velocity(use_z=False, use_velocity=True))
+    np.testing.assert_allclose(out[:, :182], seq[:, :182])
+
+    vel = out[:, 182:364]
+    expected_diff = np.full((182,), 2.0, dtype=np.float32)
+    np.testing.assert_allclose(vel[1], expected_diff)
+    np.testing.assert_allclose(vel[2], expected_diff)
+    np.testing.assert_allclose(vel[3], expected_diff)
+    np.testing.assert_allclose(vel[0], expected_diff)
+    np.testing.assert_allclose(out[:, -2:], seq[:, -2:])

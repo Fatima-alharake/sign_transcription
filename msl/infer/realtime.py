@@ -216,12 +216,15 @@ def prepare_window(
         return None
 
     sequence = np.stack(vectors)
-    if sequence.shape[1] != cfg.feature.n_features:
+    window = resample(sequence, cfg.feature.seq_len)
+    if cfg.feature.use_velocity:
+        window = lm.append_velocity(window, cfg.feature.use_z)
+    if window.shape[1] != cfg.feature.n_features:
         raise ValueError(
-            f"prepared feature width {sequence.shape[1]} does not match "
+            f"prepared feature width {window.shape[1]} does not match "
             f"checkpoint width {cfg.feature.n_features}"
         )
-    return resample(sequence, cfg.feature.seq_len)
+    return window
 
 
 class WlaslSignPredictor:

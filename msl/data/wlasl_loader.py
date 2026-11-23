@@ -498,6 +498,8 @@ class WlaslLandmarkDataset:
         if per_block:
             sequence = lm.select_z_blocks(sequence, tuple(self.cfg.feature.z_blocks))
         window = resample(sequence, self.cfg.feature.seq_len)
+        if self.cfg.feature.use_velocity:
+            window = lm.append_velocity(window, self.cfg.feature.use_z)
         return torch.from_numpy(window), int(row["gloss_id"])
 
 
