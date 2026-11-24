@@ -14,27 +14,42 @@ from msl.models.heads import ClassificationHead
 
 
 class SignClassifier(nn.Module):
-    """Backbone + classification head, checkpointed as two separate subtrees.
-
-    `state_dict()` naturally namespaces these as `backbone.*` and `head.*`,
-    which is what makes `load_backbone_only` below a one-liner: fine-tuning
-    from a proxy-language checkpoint keeps `backbone.*` and discards `head.*`.
-    """
-
-    def __init__(self, backbone: SequenceBackbone, head: ClassificationHead) -> None:
+    def __init__(
+        self,
+        backbone: SequenceBackbone,
+        head: ClassificationHead,
+        proj_head: nn.Module | None = None,
+    ) -> None:
         super().__init__()
         self.backbone = backbone
         self.head = head
+        self.proj_head = proj_head
 
     def forward(self, x: Tensor) -> Tensor:
         return self.head(self.backbone(x))
 
-    def embed(self, x: Tensor) -> Tensor:
-        """Pooled embedding without the classifier -- for probing and retrieval."""
-        return self.backbone(x)
+    def embed(self, x: Tensor, normalize: bool = False) -> Tensor:
+        h = self.backbone(x)
+        if normalize:
+            return torch.nn.functional.normalize(h, p=2, dim=-1)
+        return h
+
+    def project(self, x: Tensor, normalize: bool = True) -> Tensor:
+        h = self.backbone(x)
+        return self.project_embedding(h, normalize=normalize)
+
+    def project_embedding(self, h: Tensor, normalize: bool = True) -> Tensor:
+        z = self.proj_head(h) if self.proj_head is not None else h
+        if normalize:
+            return torch.nn.functional.normalize(z, p=2, dim=-1)
+        return z
 
 
-def build_model(cfg: ExperimentConfig, num_classes: int) -> SignClassifier:
+def build_model(
+    cfg: ExperimentConfig,
+    num_classes: int,
+    include_proj_head: bool = False,
+) -> SignClassifier:
     backbone = build_backbone(
         n_features=cfg.feature.n_features,
         cfg=cfg.model,
@@ -45,7 +60,19 @@ def build_model(cfg: ExperimentConfig, num_classes: int) -> SignClassifier:
         num_classes=num_classes,
         dropout=cfg.model.dropout,
     )
-    return SignClassifier(backbone, head)
+    proj_head = None
+    proj_dim = getattr(cfg.model, "proj_dim", 0)
+    contrastive_weight = getattr(cfg.train, "contrastive_weight", 0.0)
+    if include_proj_head or (proj_dim > 0 and contrastive_weight > 0):
+        from msl.models.heads import ProjectionHead
+
+        actual_dim = proj_dim if proj_dim > 0 else backbone.d_model
+        proj_head = ProjectionHead(
+            d_model=backbone.d_model,
+            proj_dim=actual_dim,
+            dropout=cfg.model.dropout,
+        )
+    return SignClassifier(backbone, head, proj_head=proj_head)
 
 
 def load_backbone_only(model: SignClassifier, checkpoint_path: str | Path) -> list[str]:

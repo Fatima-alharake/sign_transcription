@@ -23,14 +23,22 @@ class ClassificationHead(nn.Module):
         return self.fc(self.dropout(embedding))
 
 
+class ProjectionHead(nn.Module):
+    def __init__(self, d_model: int, proj_dim: int = 128, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.LayerNorm(d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model, proj_dim),
+        )
+
+    def forward(self, embedding: Tensor) -> Tensor:
+        return self.net(embedding)
+
+
 class CTCHead(nn.Module):
-    """Continuous signing: per-frame logits over vocabulary + blank. Stub.
-
-    Deferred to Milestone 8. Note this one consumes the *unpooled* `(B, T, C)`
-    sequence, not the pooled embedding, so backbones will need to expose their
-    pre-pooling activations when this lands.
-    """
-
     def __init__(self, d_model: int, num_classes: int) -> None:
         super().__init__()
         raise NotImplementedError(

@@ -49,13 +49,14 @@ class FeatureConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    arch: str = "transformer"  # transformer | bilstm | tcn | stgcn (stubbed)
+    arch: str = "transformer"  # transformer | bilstm | tcn
     d_model: int = 128
     n_layers: int = 4
     n_heads: int = 4
     ffn_dim: int = 256
-    dropout: float = 0.3  # small-data regime: regularise hard
+    dropout: float = 0.3
     tcn_kernel_size: int = 5
+    proj_dim: int = 0
 
 
 @dataclass(frozen=True)
@@ -68,18 +69,12 @@ class TrainConfig:
     label_smoothing: float = 0.1
     grad_clip: float = 1.0
     eval_every: int = 25
-    patience: int = 5  # early-stopping patience, in evaluations not steps
-    # Early stopping on a small val set makes the stopping step -- not the change
-    # under test -- drive the score, so variant comparisons run with this False,
-    # a fixed step budget, and the FINAL checkpoint evaluated rather than the
-    # best-val one. Leaving it True but evaluating best.pt would keep val in the
-    # loop by the back door.
+    patience: int = 5
     early_stopping: bool = True
     seed: int = 1234
-    # DataLoader workers. Machine has 16GB RAM typically ~90% committed, so each
-    # worker's copy of the parent process matters; keep this low and rely on
-    # lazy per-item loading rather than prefetch depth.
     num_workers: int = 0
+    contrastive_weight: float = 0.0
+    contrastive_temp: float = 0.07
     out_dir: str = "checkpoints"
     log_dir: str = "runs"
     tensorboard: bool = True
@@ -145,6 +140,7 @@ class AugmentConfigSection:
     scale_max: float = 1.1
     joint_noise_std: float = 0.01
     mirror: bool = False
+    mirror_p: float = 0.5
 
 
 @dataclass(frozen=True)

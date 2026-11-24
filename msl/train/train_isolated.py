@@ -94,6 +94,12 @@ def train(
 
     model = build_model(cfg, num_classes=len(vocab)).to(device)
     criterion = nn.CrossEntropyLoss(label_smoothing=cfg.train.label_smoothing)
+
+    supcon_criterion = None
+    if getattr(cfg.train, "contrastive_weight", 0.0) > 0.0:
+        from msl.train.contrastive import SupConLoss, augment_landmarks_torch
+
+        supcon_criterion = SupConLoss(temperature=cfg.train.contrastive_temp)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay
     )
@@ -133,7 +139,21 @@ def train(
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
 
-        loss = criterion(model(x), y)
+        h = model.backbone(x)
+        logits = model.head(h)
+        ce_loss = criterion(logits, y)
+
+        if supcon_criterion is not None:
+            x_aug = augment_landmarks_torch(x)
+            z1 = model.project_embedding(h)
+            z2 = model.project(x_aug)
+            z = torch.stack([z1, z2], dim=1)
+            supcon_loss = supcon_criterion(z, labels=y)
+            w = cfg.train.contrastive_weight
+            loss = (1.0 - w) * ce_loss + w * supcon_loss
+        else:
+            loss = ce_loss
+
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         if cfg.train.grad_clip > 0:
