@@ -458,25 +458,20 @@ class WlaslLandmarkDataset:
     def __len__(self) -> int:
         return len(self.rows)
 
-    def __getitem__(self, index: int):
+    def get_item(self, index: int, mirror: bool = False):
         import torch
 
         row = self.rows[index]
         features = np.load(row["cache"], mmap_mode="r")
         sequence = np.asarray(features)
-        # A per-block z run keeps the full uniform tensor through augmentation
-        # and narrows afterwards -- see landmarks.select_z_blocks.
         per_block = self.cfg.feature.z_blocks is not None
         if per_block and sequence.shape[1] != lm.feature_dim(True):
             raise ValueError(
                 f"z_blocks needs a use_z=True cache tensor, got width "
                 f"{sequence.shape[1]} for {row['video_id']}"
             )
-        # The cache holds use_z=True tensors. A use_z=False run slices them
-        # rather than re-extracting: the two are exactly equivalent because the
-        # normalisation origin and scale never depend on z.
         if per_block:
-            pass  # narrowing happens after augmentation, below
+            pass
         elif not self.cfg.feature.use_z and sequence.shape[1] == lm.feature_dim(True):
             sequence = lm.drop_z(sequence)
         elif self.cfg.feature.use_z and self.cfg.feature.z_scale is not None:
@@ -490,8 +485,10 @@ class WlaslLandmarkDataset:
         trim = self._trims.get(row["video_id"])
         if trim is not None:
             sequence = sequence[trim.keep_start:trim.keep_end]
-        if self._aug is not None:
-            # Temporal ops change the length, so augment before the resample.
+        if mirror:
+            from msl.data.augment import mirror_sequence
+            sequence = mirror_sequence(sequence, self.cfg.feature.use_z)
+        elif self._aug is not None:
             sequence = augment_sequence(
                 sequence, self._aug, self.cfg.feature.use_z, self._rng
             )
@@ -501,6 +498,9 @@ class WlaslLandmarkDataset:
         if self.cfg.feature.use_velocity:
             window = lm.append_velocity(window, self.cfg.feature.use_z)
         return torch.from_numpy(window), int(row["gloss_id"])
+
+    def __getitem__(self, index: int):
+        return self.get_item(index, mirror=False)
 
 
 def main(argv: list[str] | None = None) -> int:

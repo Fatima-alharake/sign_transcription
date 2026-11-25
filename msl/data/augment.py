@@ -61,6 +61,27 @@ class AugmentConfig:
     # flags must swap together; swapping only the coordinates silently
     # mislabels which hand is which.
     mirror: bool = False
+    mirror_p: float = 1.0
+
+
+def mirror_sequence(sequence: np.ndarray, use_z: bool) -> np.ndarray:
+    out = np.array(sequence, dtype=np.float32, copy=True)
+    coord_end = lm.N_LANDMARKS * lm.coords_per_landmark(use_z)
+    coords = _coord_view(out[:, :coord_end], use_z)
+    visibility = out[:, lm.visibility_slice(use_z)]
+
+    coords[..., 0] *= -1.0
+    left, right = _hand_block_bounds(use_z)
+    c = lm.coords_per_landmark(use_z)
+    lp = slice(left.start // c, left.stop // c)
+    rp = slice(right.start // c, right.stop // c)
+    swapped = coords.copy()
+    swapped[:, lp, :] = coords[:, rp, :]
+    swapped[:, rp, :] = coords[:, lp, :]
+    coords[...] = swapped
+    visibility[:, [0, 1]] = visibility[:, [1, 0]]
+    out[:, :coord_end] = coords.reshape(out.shape[0], coord_end)
+    return out
 
 
 def _coord_view(frame_block: np.ndarray, use_z: bool) -> np.ndarray:
@@ -140,10 +161,7 @@ def augment_sequence(
         noise[:, right_points, :] *= (visibility[:, 1] > 0)[:, None, None]
         coords += noise
 
-    if cfg.mirror:
-        # Reflect about the camera's vertical axis, then swap the hands so the
-        # signer's left hand is still in the left-hand block -- and swap the
-        # visibility flags with them.
+    if cfg.mirror and (rng.random() < cfg.mirror_p):
         coords[..., 0] *= -1.0
         left, right = _hand_block_bounds(use_z)
         c = lm.coords_per_landmark(use_z)

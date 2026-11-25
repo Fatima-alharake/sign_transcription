@@ -133,6 +133,13 @@ def main(argv: list[str] | None = None) -> int:
 
     test = evaluate(model, test_loader, device, num_classes=len(vocab))
 
+    from msl.infer.retrieval import SignRetrievalGallery, evaluate_retrieval
+
+    gallery = SignRetrievalGallery.from_dataset(model, train_loader.dataset, device)
+    gallery_path = Path(cfg.train.out_dir) / "gallery.npz"
+    gallery.save(gallery_path)
+    retrieval_res = evaluate_retrieval(model, gallery, test_loader.dataset, device)
+
     print("\n" + "=" * 74)
     print("TEST (signer-disjoint) -- " + CAVEAT)
     print("=" * 74)
@@ -141,6 +148,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  macro F1  : {test.macro_f1:.4f}")
     print(f"  clips     : {test.n_clips} over {test.n_classes} classes present")
     print(f"  chance top-1 ~ {1 / len(vocab):.4f}, top-5 ~ {5 / len(vocab):.4f}")
+
+    print("\n" + "=" * 74)
+    print("SIGN RETRIEVAL (signer-disjoint queries vs training gallery)")
+    print("=" * 74)
+    print(f"  Recall@1  : {retrieval_res['recall_at_1']:.4f}   ({retrieval_res['recall_at_1'] * 100:.2f}%)")
+    print(f"  Recall@5  : {retrieval_res['recall_at_5']:.4f}   ({retrieval_res['recall_at_5'] * 100:.2f}%)")
+    print(f"  mAP       : {retrieval_res['mAP']:.4f}")
+    print(f"  MRR       : {retrieval_res['mrr']:.4f}")
+    print(f"  gallery   : {retrieval_res['gallery_size']} items indexed -> {gallery_path}")
+    print(f"  disjoint  : {retrieval_res['signer_disjoint']}")
 
     print("\n  most-confused pairs (true -> predicted, count / support):")
     for true_g, pred_g, count, support in test.worst_pairs(vocab.glosses, k=12):
@@ -173,6 +190,10 @@ def main(argv: list[str] | None = None) -> int:
         "test_top1": round(test.top1, 4),
         "test_top5": round(test.top5, 4),
         "test_macro_f1": round(test.macro_f1, 4),
+        "retrieval_recall_at_1": retrieval_res["recall_at_1"],
+        "retrieval_recall_at_5": retrieval_res["recall_at_5"],
+        "retrieval_mAP": retrieval_res["mAP"],
+        "retrieval_mrr": retrieval_res["mrr"],
         "test_clips": test.n_clips,
         "classes": len(vocab),
         "chance_top1": round(1 / len(vocab), 4),
